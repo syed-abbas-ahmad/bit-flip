@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bitflip"
+version = "1.0.0"
+description = "Three-qubit bit-flip code: classical-mask simulation of one correction round with noisy parity readout"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.0",
+    "matplotlib>=3.8",
+    "pandas>=2.0",
+    "pillow>=10.0",
+    "imageio>=2.30",
+    "imageio-ffmpeg>=0.4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "jupyter", "nbclient", "nbformat"]
+
+[project.scripts]
+bitflip = "bitflip.cli:main"
+
+[tool.setuptools]
+packages = ["bitflip"]
