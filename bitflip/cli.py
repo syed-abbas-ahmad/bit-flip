@@ -77,9 +77,16 @@ def cmd_animate(args: argparse.Namespace) -> int:
 
 
 def cmd_all(args: argparse.Namespace) -> int:
+    """Run every step; the CSV output doubles as the figure/animate input.
+
+    The figure is written to ``--figure-out`` (never to the CSV path), and
+    the animations read the freshly written CSV.
+    """
     cmd_simulate(args)
-    cmd_figure(args)
-    cmd_animate(args)
+    fig_args = argparse.Namespace(csv=args.out, out=args.figure_out)
+    cmd_figure(fig_args)
+    anim_args = argparse.Namespace(outdir=args.outdir, csv=args.out, fps=args.fps)
+    cmd_animate(anim_args)
     return 0
 
 
@@ -107,7 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
     tab.add_argument("--q", type=float, default=0.02)
     tab.set_defaults(func=cmd_table)
 
-    anim = sub.add_parser("animate", help="render both GIF animations")
+    anim = sub.add_parser("animate", help="render both animations (MP4 + looping GIF)")
     anim.add_argument("--outdir", type=Path, default=DEFAULT_RESULTS_DIR)
     anim.add_argument("--csv", type=Path, default=DEFAULT_CSV,
                       help="CSV of sweep records driving the sweep animation")
@@ -116,10 +123,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     everything = sub.add_parser("all", help="simulate, figure and animate")
     everything.add_argument("--out", type=Path, default=DEFAULT_CSV)
+    everything.add_argument("--figure-out", type=Path, default=DEFAULT_FIGURE,
+                            dest="figure_out")
     everything.add_argument("--seed", type=int, default=DEFAULT_SEED)
     everything.add_argument("--shots", type=int, default=None)
     everything.add_argument("--no-check", action="store_true")
-    everything.add_argument("--csv", type=Path, default=DEFAULT_CSV)
     everything.add_argument("--outdir", type=Path, default=DEFAULT_RESULTS_DIR)
     everything.add_argument("--fps", type=int, default=12)
     everything.set_defaults(func=cmd_all)
