@@ -1,0 +1,47 @@
+{
+  "fps": 12,
+  "size_px": [
+    960,
+    540
+  ],
+  "note": "Frame counts and durations probed from the written files; sha256 identifies the exact delivered artifacts.",
+  "animations": [
+    {
+      "mp4_frames": 312,
+      "mp4_duration_s": 26.0,
+      "gif_frames": 20,
+      "gif_duration_s": 25.79,
+      "name": "anim_round - one-round walkthrough",
+      "mp4": "results\\anim_round.mp4",
+      "gif": "results\\anim_round.gif",
+      "mp4_sha256": "dff2b746c57abb2bb8ef88117a79e3b7dcf26fcb64e3b67cfc4bb7ee6288a467",
+      "gif_sha256": "3f843c657830445de2fa699c5d1f05b48d333755f92f362999bf1f3f23eb81a9",
+      "content": "three verified scenarios: clean correction (mask 010, reported 11), misleading report (mask 100, reported 11 -> residual 110, logical failure), false report (mask 000, reported 01 -> residual 001, logical survives)",
+      "previews": [
+        "results\\preview_round_opening.png",
+        "results\\preview_round_clean_correction.png",
+        "results\\preview_round_misleading_report.png",
+        "results\\preview_round_misleading_outcome.png",
+        "results\\preview_round_false_report_outcome.png",
+        "results\\preview_round_final.png"
+      ]
+    },
+    {
+      "mp4_frames": 336,
+      "mp4_duration_s": 28.0,
+      "gif_frames": 206,
+      "gif_duration_s": 27.26,
+      "name": "anim_sweep - p-sweep with Monte Carlo estimates",
+      "mp4": "results\\anim_sweep.mp4",
+      "gif": "results\\anim_sweep.gif",
+      "mp4_sha256": "ea8caa19c0bd467c85c7703fa2668387bf58d2e37d365c638981fec23cd7bbbd",
+      "gif_sha256": "1dee770eddad85400a89fb2b1d961ce956f5762055772db2e13dc77f1da927f9",
+      "content": "driven by results/sweep.csv (same records as the comparison figure); pause at p=0.1 with verified numbers; final frame includes the p=0.5 check",
+      "previews": [
+        "results\\preview_sweep_opening.png",
+        "results\\preview_sweep_pause_p01.png",
+        "results\\preview_sweep_final.png"
+      ]
+    }
+  ]
+}
