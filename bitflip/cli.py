@@ -48,6 +48,7 @@ def cmd_simulate(args: argparse.Namespace) -> int:
 
 
 def cmd_figure(args: argparse.Namespace) -> int:
+    args.out.parent.mkdir(parents=True, exist_ok=True)
     make_figure(args.csv, args.out)
     print(f"Wrote figure to {args.out}")
     return 0

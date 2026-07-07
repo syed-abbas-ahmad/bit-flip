@@ -10,7 +10,7 @@ figure and two animations. Everything runs locally from a fresh environment.
 
 ## The model and decoder conventions
 
-One error-correction round on three data qubits. Qubits are labelled 1–3.
+One error-correction round on three data qubits. Qubits are labelled 1-3.
 
 - **Encoding.** Logical |0⟩ = 000, logical |1⟩ = 111. Only X (bit-flip)
   errors are modelled.

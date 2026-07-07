@@ -34,8 +34,8 @@
       "name": "anim_sweep - p-sweep with Monte Carlo estimates",
       "mp4": "results\\anim_sweep.mp4",
       "gif": "results\\anim_sweep.gif",
-      "mp4_sha256": "ea8caa19c0bd467c85c7703fa2668387bf58d2e37d365c638981fec23cd7bbbd",
-      "gif_sha256": "1dee770eddad85400a89fb2b1d961ce956f5762055772db2e13dc77f1da927f9",
+      "mp4_sha256": "faae66e3aedf3d2ca6bc5d9bfe6b708b7387c348241c5746653d507b75e4ea86",
+      "gif_sha256": "de44fe905d9f704096dd6f9de176c9ebf0f35afc4051c64e1142f1654061c316",
       "content": "driven by results/sweep.csv (same records as the comparison figure); pause at p=0.1 with verified numbers; final frame includes the p=0.5 check",
       "previews": [
         "results\\preview_sweep_opening.png",
