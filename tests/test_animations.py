@@ -54,6 +54,8 @@ def test_captions_stay_inside_the_frame(tmp_path, no_check_csv):
 
     reader = iio.get_reader(paths[0])
     for frame in reader:
-        # Column 959 is the last pixel column; allow only pure background.
-        assert (frame[:, -1, :] == 255).all(), "non-white pixels at the right edge"
+        # Column 959 is the last pixel column; allow only near-white
+        # background (>= 250) so antialiasing tolerance does not make the
+        # test brittle while real ink still fails.
+        assert (frame[:, -1, :] >= 250).all(), "ink detected at the right edge"
     reader.close()

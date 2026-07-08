@@ -128,9 +128,17 @@ def _probe(mp4_path: Path, gif_path: Path, fps: int) -> dict:
 
 
 def _export_previews(mp4_path: Path, frames: list[np.ndarray], picks: dict[str, int],
-                     stem: str, outdir: Path):
-    """Static previews (opening, transition, final) as PNG files."""
+                     stem: str, outdir: Path, frame_indices=None):
+    """Static previews (opening, transition, final) as PNG files.
+
+    ``picks`` name timeline frame indices. When ``frame_indices`` restricts
+    the render, only picks that were actually rendered are exported, mapped
+    to their position in the rendered list.
+    """
     out = []
+    if frame_indices is not None:
+        rendered = {idx: pos for pos, idx in enumerate(frame_indices)}
+        picks = {name: rendered[idx] for name, idx in picks.items() if idx in rendered}
     for name, idx in picks.items():
         idx = min(idx, len(frames) - 1)
         path = outdir / f"preview_{stem}_{name}.png"
@@ -393,7 +401,7 @@ def render_animation_a(outdir: Path, fps: int = FPS_DEFAULT,
             mp4, frames,
             {"opening": 0, "clean_correction": 84, "misleading_report": 147,
              "misleading_outcome": 190, "false_report_outcome": 260, "final": 311},
-            "round", outdir)],
+            "round", outdir, frame_indices)],
     })
     _merge_record(outdir, info)
     return [mp4, gif]
@@ -507,9 +515,10 @@ def _draw_sweep_axes(ax, frame, p_hi, paused, final):
 
     if final:
         check = frame[np.isclose(frame["p"], 0.5)]
-        if len(check) >= 2:
-            c05 = check[check["q"] == 0.0].iloc[0]
-            n05 = check[check["q"] == 0.02].iloc[0]
+        c05 = check[check["q"] == 0.0]
+        n05 = check[check["q"] == 0.02]
+        if len(c05) and len(n05):
+            c05, n05 = c05.iloc[0], n05.iloc[0]
             ax.text(0.01, 0.02,
                     f"p = 0.5 boundary check (from the same records):\n"
                     f"unencoded {float(c05['unencoded_failure']):.1%}, "
@@ -586,7 +595,7 @@ def render_animation_b(outdir: Path, fps: int = FPS_DEFAULT,
         "previews": [str(p) for p in _export_previews(
             mp4, frames,
             {"opening": 0, "pause_p01": 110, "final": 335},
-            "sweep", outdir)],
+            "sweep", outdir, frame_indices)],
     })
     # merge with animation A's record if present
     _merge_record(outdir, info)
