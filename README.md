@@ -10,7 +10,7 @@ figure and two animations. Everything runs locally from a fresh environment.
 
 ## The model and decoder conventions
 
-One error-correction round on three data qubits. Qubits are labelled 1–3.
+One error-correction round on three data qubits. Qubits are labelled 1-3.
 
 - **Encoding.** Logical |0⟩ = 000, logical |1⟩ = 111. Only X (bit-flip)
   errors are modelled.
@@ -123,7 +123,7 @@ bitflip/            package (single implementation for CLI and notebook)
   plotting.py       comparison figure
   animate.py        both animations (MP4 + looping GIF + previews)
   cli.py            python -m bitflip {simulate,figure,table,animate,all}
-tests/              pytest suite (32 tests)
+tests/              pytest suite (38 tests across 6 files)
 scripts/build_notebook.py   builds and executes the delivered notebook
 notebooks/bitflip_one_round.ipynb   executed notebook, runnable top to bottom
 results/            CSV, figure, animations, previews, verification record
@@ -184,12 +184,14 @@ SHA-256 hashes).
 
 ### Statistical tolerance used in tests
 
-The suite never gates each sampled point on its own 95% interval - with ~31
+The suite never gates each sampled point on its own 95% interval — with ~31
 points that fails by chance ~1 time in 20. Each point contributes a z-score
-(MC − exact)/σ; tests require max|z| < 4 **and** reduced χ² = mean(z²) < 2.5
-across all points. Exact-vs-analytic checks use abs tol 1e-12 (documented
-floating-point tolerance). Seeds are fixed a priori, never chosen for
-attractive agreement.
+(MC − exact)/σ, with σ from the exact binomial rate floored at 1e-15 (so p = 0
+points, which cannot fail, contribute z = 0); tests require max|z| < 4 **and**
+reduced χ² = mean(z²) < 2.5 across all points. Delivered data: max|z| = 2.93,
+χ̄² = 1.12 over all 64 CSV rows (1.16 if the two p = 0 rows are excluded).
+Exact-vs-analytic checks use abs tol 1e-12 (documented floating-point
+tolerance). Seeds are fixed a priori, never chosen for attractive agreement.
 
 ## Animations
 

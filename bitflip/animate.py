@@ -128,9 +128,17 @@ def _probe(mp4_path: Path, gif_path: Path, fps: int) -> dict:
 
 
 def _export_previews(mp4_path: Path, frames: list[np.ndarray], picks: dict[str, int],
-                     stem: str, outdir: Path):
-    """Static previews (opening, transition, final) as PNG files."""
+                     stem: str, outdir: Path, frame_indices=None):
+    """Static previews (opening, transition, final) as PNG files.
+
+    ``picks`` name timeline frame indices. When ``frame_indices`` restricts
+    the render, only picks that were actually rendered are exported, mapped
+    to their position in the rendered list.
+    """
     out = []
+    if frame_indices is not None:
+        rendered = {idx: pos for pos, idx in enumerate(frame_indices)}
+        picks = {name: rendered[idx] for name, idx in picks.items() if idx in rendered}
     for name, idx in picks.items():
         idx = min(idx, len(frames) - 1)
         path = outdir / f"preview_{stem}_{name}.png"
@@ -354,11 +362,13 @@ def _draw_outro_numbers(ax):
         y -= 0.38
 
 
-def render_animation_a(outdir: Path, fps: int = FPS_DEFAULT) -> list[Path]:
+def render_animation_a(outdir: Path, fps: int = FPS_DEFAULT,
+                       frame_indices=None) -> list[Path]:
     data = scenarios()
     frames = []
     n_frames = 312  # 26.0 s at 12 fps
-    for idx in range(n_frames):
+    indices = list(frame_indices) if frame_indices is not None else range(n_frames)
+    for idx in indices:
         fig, ax = _new_fig()
         if idx >= 267:
             # Outro: clean summary frame, no qubit layout underneath.
@@ -391,7 +401,7 @@ def render_animation_a(outdir: Path, fps: int = FPS_DEFAULT) -> list[Path]:
             mp4, frames,
             {"opening": 0, "clean_correction": 84, "misleading_report": 147,
              "misleading_outcome": 190, "false_report_outcome": 260, "final": 311},
-            "round", outdir)],
+            "round", outdir, frame_indices)],
     })
     _merge_record(outdir, info)
     return [mp4, gif]
@@ -504,25 +514,42 @@ def _draw_sweep_axes(ax, frame, p_hi, paused, final):
                 bbox=dict(boxstyle="round", fc="white", ec="#999999"))
 
     if final:
-        c05 = frame[np.isclose(frame["p"], 0.5) & np.isclose(frame["q"], 0.0)].iloc[0]
-        n05 = frame[np.isclose(frame["p"], 0.5) & np.isclose(frame["q"], 0.02)].iloc[0]
-        ax.text(0.01, 0.02,
-                f"p = 0.5 boundary check (from the same records):\n"
-                f"unencoded {float(c05['unencoded_failure']):.1%}, "
-                f"q = 0: {float(c05[_LOGICAL]):.1%}, q = 0.02: {float(n05[_LOGICAL]):.1%} "
-                "- code and unencoded both sit at 50%",
-                transform=ax.transAxes, fontsize=9.5, va="bottom",
-                bbox=dict(boxstyle="round", fc="#FFF8E7", ec=COLOR_HIGHLIGHT))
+        check = frame[np.isclose(frame["p"], 0.5)]
+        c05 = check[check["q"] == 0.0]
+        n05 = check[check["q"] == 0.02]
+        if len(c05) and len(n05):
+            c05, n05 = c05.iloc[0], n05.iloc[0]
+            ax.text(0.01, 0.02,
+                    f"p = 0.5 boundary check (from the same records):\n"
+                    f"unencoded {float(c05['unencoded_failure']):.1%}, "
+                    f"q = 0: {float(c05[_LOGICAL]):.1%}, q = 0.02: {float(n05[_LOGICAL]):.1%} "
+                    "- code and unencoded both sit at 50%",
+                    transform=ax.transAxes, fontsize=9.5, va="bottom",
+                    bbox=dict(boxstyle="round", fc="#FFF8E7", ec=COLOR_HIGHLIGHT))
+        else:
+            ax.text(0.01, 0.02,
+                    "p = 0.5 boundary check not in this data\n"
+                    "(simulate without --no-check to include it)",
+                    transform=ax.transAxes, fontsize=9, va="bottom",
+                    color="#777777")
 
 
 def render_animation_b(outdir: Path, fps: int = FPS_DEFAULT,
-                       csv_path: Path | None = None) -> list[Path]:
+                       csv_path: Path | None = None,
+                       frame_indices=None) -> list[Path]:
+    """Render the p-sweep animation.
+
+    ``frame_indices`` optionally restricts which timeline frames are
+    rendered (used by the test suite to exercise the final frame cheaply);
+    by default all 336 frames (28 s at 12 fps) are produced.
+    """
     from matplotlib.lines import Line2D
 
     frame = _load_sweep(csv_path, outdir)
     frames = []
     n_frames = 336  # 28.0 s at 12 fps
-    for idx in range(n_frames):
+    indices = list(frame_indices) if frame_indices is not None else range(n_frames)
+    for idx in indices:
         state = _sweep_frame_state(idx)
         fig = plt.figure(figsize=SIZE, dpi=100)
         ax = fig.add_axes((0.09, 0.155, 0.88, 0.745))
@@ -550,7 +577,8 @@ def render_animation_b(outdir: Path, fps: int = FPS_DEFAULT,
             caption = ("One correction round: independent X errors (p) and noisy parity "
                        "reports (q). Curves: exact 32-event enumeration; markers: seeded "
                        "Monte Carlo, appearing as p passes each estimate.")
-        fig.text(0.02, 0.015, caption, fontsize=10.5, color="#444444")
+        wrapped = "\n".join(textwrap.wrap(caption, width=118))
+        fig.text(0.02, 0.005, wrapped, fontsize=10.5, color="#444444", va="bottom")
         frames.append(_grab(fig))
         plt.close(fig)
 
@@ -567,7 +595,7 @@ def render_animation_b(outdir: Path, fps: int = FPS_DEFAULT,
         "previews": [str(p) for p in _export_previews(
             mp4, frames,
             {"opening": 0, "pause_p01": 110, "final": 335},
-            "sweep", outdir)],
+            "sweep", outdir, frame_indices)],
     })
     # merge with animation A's record if present
     _merge_record(outdir, info)

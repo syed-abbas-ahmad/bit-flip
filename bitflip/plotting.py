@@ -93,8 +93,11 @@ def make_figure(csv_path, out_path: str) -> plt.Figure:
     ax.grid(alpha=0.25)
 
     # Boundary check at p = 0.5: code and unencoded must agree at 50%.
-    # Optional: CSVs written with --no-check have no p = 0.5 rows.
-    has_check = len(check) > 0 and set(np.isclose(check["p"], 0.5))
+    # Optional: CSVs written with --no-check have no p = 0.5 rows, and a
+    # partial CSV might have only one of the two q values.
+    c05 = check[check["q"] == 0.0]
+    n05 = check[check["q"] == 0.02]
+    has_check = len(c05) > 0 and len(n05) > 0
     if has_check:
         xs = np.arange(3)
         labels = ["unencoded", "q = 0", "q = 0.02"]
