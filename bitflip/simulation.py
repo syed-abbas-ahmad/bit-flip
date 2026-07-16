@@ -58,6 +58,8 @@ def wilson_interval(successes: int, n: int, z: float = 1.959963985) -> tuple[flo
         raise ValueError("n must be positive")
     if successes < 0 or successes > n:
         raise ValueError("successes must be within [0, n]")
+    if z <= 0:
+        raise ValueError(f"z must be positive, got {z}")
     if successes == 0:
         return (0.0, float(min(1.0, centre_for(successes, n, z)[1])))
     if successes == n:
@@ -155,18 +157,38 @@ def run_sweep(
     itself (via ``numpy.random.SeedSequence`` spawn keys), so every point is
     an independent stream and results do not depend on sweep order.
 
+    Supported grid: p and q are quantized to 4 decimal places for seed
+    derivation, so distinct values that agree to 4 decimals would share a
+    random stream; values that are not multiples of 1e-4 (within float
+    tolerance) are rejected. The published sweep uses the 0.01 grid, which
+    is safely inside this constraint. Iterables are materialized, so
+    one-shot iterators (e.g. generators) are accepted.
+
     ``shots=None`` selects the adaptive budget from ``shots_for_point``;
     an integer fixes the budget for every point (used by tests).
     """
+    p_values = tuple(p_values)
+    q_values = tuple(q_values)
     results = []
     for p in p_values:
+        _check_grid_value(p, "p")
         for q in q_values:
+            _check_grid_value(q, "q")
             seq = np.random.SeedSequence(entropy=seed, spawn_key=(round(p * 10_000), round(q * 10_000)))
             budget = shots_for_point(p, q) if shots is None else shots
             results.append(
                 simulate_point(p, q, budget, seed=int(seq.generate_state(1, dtype=np.uint32)[0]))
             )
     return results
+
+
+def _check_grid_value(value: float, name: str) -> None:
+    """Reject values outside the supported 4-decimal seed grid."""
+    if abs(value - round(value, 4)) > 1e-9:
+        raise ValueError(
+            f"{name}={value!r} is outside the supported 4-decimal grid; seed "
+            "derivation quantizes p and q to 4 decimals (round(value, 4))"
+        )
 
 
 def sweep_frame(results) -> "pd.DataFrame":
