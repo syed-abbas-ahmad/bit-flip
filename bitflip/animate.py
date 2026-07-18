@@ -35,7 +35,7 @@ import pandas as pd
 from PIL import Image
 
 from .enumeration import exact_rates
-from .plotting import COLOR_CLEAN, COLOR_NOISY, COLOR_UNENCODED
+from .plotting import COLOR_CLEAN, COLOR_NOISY, COLOR_UNENCODED, validate_sweep_csv
 from .scenarios import scenarios
 
 FPS_DEFAULT = 12
@@ -147,7 +147,7 @@ def _export_previews(mp4_path: Path, frames: list[np.ndarray], picks: dict[str, 
     return out
 
 
-def _merge_record(outdir: Path, info: dict):
+def _merge_record(outdir: Path, info: dict, fps: int = FPS_DEFAULT):
     """Add one animation's verification entry, preserving the others."""
     record_path = outdir / "animation_verification.json"
     entries = []
@@ -156,12 +156,12 @@ def _merge_record(outdir: Path, info: dict):
         entries = [e for e in old.get("animations", [])
                    if not e["name"].startswith(info["name"].split(" ")[0])]
     entries.append(info)
-    _record(outdir, entries)
+    _record(outdir, entries, fps=fps)
 
 
-def _record(outdir: Path, entries: list[dict]):
+def _record(outdir: Path, entries: list[dict], fps: int = FPS_DEFAULT):
     record = {
-        "fps": FPS_DEFAULT,
+        "fps": fps,
         "size_px": [960, 540],
         "note": "Frame counts and durations probed from the written files; "
                 "sha256 identifies the exact delivered artifacts.",
@@ -174,7 +174,24 @@ def _record(outdir: Path, entries: list[dict]):
 # animation A: one-round walkthrough
 # --------------------------------------------------------------------------
 
-def _draw_qubits(ax, bits, error_idx, corrected_idx, show_correction):
+def _draw_qubits(ax, state):
+    """Draw the data register. Before the correction the glyphs show the
+    incoming error mask (labelled as such); once the correction is applied
+    they switch to the corrected block, so the residual and logical outcome
+    never sit beside a stale pre-correction mask."""
+    show_correction = state.get("show_correction")
+    bits = tuple(state["final_block"]) if show_correction else tuple(
+        state.get("error_mask") or (0, 0, 0))
+    error_idx = None if show_correction else _error_idx(state)
+    corrected_idx = state.get("correction_qubit") if show_correction else None
+
+    if show_correction:
+        ax.text(1.75, 4.95, "data block (after correction)", ha="center",
+                fontsize=9.5, color=COLOR_CORRECTION, fontweight="bold")
+    elif state.get("show_error"):
+        ax.text(1.75, 4.95, "data block (X errors marked)", ha="center",
+                fontsize=9.5, color=COLOR_FAIL, fontweight="bold")
+
     for i in range(3):
         x = 1.1 + 1.15 * i
         circ = plt.Circle((x, 3.55), 0.42, facecolor="white",
@@ -323,9 +340,9 @@ def _walkthrough_state(frame_idx: int, data: dict):
         st["show_residual"] = k >= 48
         st["show_outcome"] = k >= 60
     elif name == "misleading":
-        st["caption"] = ("Scenario 2 - a single physical error on qubit 1 (the mirror "
-                         "image of scenario 1), but readout noise (q = 0.02) flips the "
-                         "second reported parity.")
+        st["caption"] = ("Scenario 2 - a single physical error on an end qubit "
+                         "(qubit 1 instead of scenario 1's central qubit 2), but "
+                         "readout noise (q = 0.02) flips the second reported parity.")
         st["show_true"] = k >= 12
         st["show_reported"] = k >= 24
         st["predict_prompt"] = ("The decoder trusts the report. Where does its correction land?"
@@ -377,21 +394,21 @@ def render_animation_a(outdir: Path, fps: int = FPS_DEFAULT,
             _draw_caption(ax, st)
         else:
             st = _walkthrough_state(idx, data)
-            _draw_qubits(ax, st["error_mask"] or (0, 0, 0),
-                         _error_idx(st), st["correction_qubit"],
-                         st["show_correction"])
+            _draw_qubits(ax, st)
             _draw_parities(ax, st)
             _draw_status(ax, st)
             _draw_caption(ax, st)
         frames.append(_grab(fig))
         plt.close(fig)
 
-    mp4 = outdir / "anim_round.mp4"
-    gif = outdir / "anim_round.gif"
+    partial = frame_indices is not None
+    stem = "anim_round_partial" if partial else "anim_round"
+    mp4 = outdir / f"{stem}.mp4"
+    gif = outdir / f"{stem}.gif"
     _save_frames(frames, mp4, gif, fps)
     info = _probe(mp4, gif, fps)
     info.update({
-        "name": "anim_round - one-round walkthrough",
+        "name": f"{stem} - one-round walkthrough" + (" (partial render)" if partial else ""),
         "mp4": str(mp4), "gif": str(gif),
         "mp4_sha256": _sha256(mp4), "gif_sha256": _sha256(gif),
         "content": "three verified scenarios: clean correction (mask 010, reported 11), "
@@ -403,7 +420,7 @@ def render_animation_a(outdir: Path, fps: int = FPS_DEFAULT,
              "misleading_outcome": 190, "false_report_outcome": 260, "final": 311},
             "round", outdir, frame_indices)],
     })
-    _merge_record(outdir, info)
+    _merge_record(outdir, info, fps=fps)
     return [mp4, gif]
 
 
@@ -431,16 +448,17 @@ def _load_sweep(csv_path: Path | None, outdir: Path) -> pd.DataFrame:
     return frame
 
 
-def _sweep_frame_state(idx: int):
+def _sweep_frame_state(idx: int, p_final: float = 0.30):
     """Timeline for animation B: intro 24 | rise 66 | pause 36 | rise 138 | tail 72.
 
     Total 336 frames (28 s at 12 fps). The sweep rises 0 -> 0.1, pauses at
-    the verified p = 0.1 example, continues to 0.31, then ends on the
-    p = 0.5 boundary check.
+    the verified p = 0.1 example, continues to ``p_final`` (the last
+    *sampled* p = 0.30, never beyond it, so no endpoint-clamped tail is
+    drawn), then ends on the p = 0.5 boundary check.
     """
     intro, pause, tail = 24, 36, 72
-    motion = 336 - intro - pause - tail  # 204 frames across p in [0, 0.31]
-    rise1 = round(motion * 0.1 / 0.31)   # frames for 0 -> 0.1
+    motion = 336 - intro - pause - tail  # 204 frames across p in [0, p_final]
+    rise1 = round(motion * 0.1 / p_final)  # frames for 0 -> 0.1
 
     if idx < intro:
         return {"p_hi": 0.0, "paused": False, "final": False}
@@ -451,8 +469,8 @@ def _sweep_frame_state(idx: int):
         return {"p_hi": 0.1, "paused": True, "final": False}
     if pos < motion + pause:
         done = (pos - rise1 - pause) / (motion - rise1)
-        return {"p_hi": 0.1 + 0.21 * done, "paused": False, "final": False}
-    return {"p_hi": 0.31, "paused": False, "final": True}
+        return {"p_hi": 0.1 + (p_final - 0.1) * done, "paused": False, "final": False}
+    return {"p_hi": p_final, "paused": False, "final": True}
 
 
 def _partial_segment(data: pd.DataFrame, p_hi: float, column: str):
@@ -497,21 +515,23 @@ def _draw_sweep_axes(ax, frame, p_hi, paused, final):
                         label=f"Monte Carlo {marker}, Wilson 95% CI")
 
     if paused:
-        row = clean[np.isclose(clean["p"], 0.1)].iloc[0]
-        nrow = noisy[np.isclose(noisy["p"], 0.1)].iloc[0]
-        ax.axvline(0.1, color="#bbbbbb", lw=1.0, linestyle=":")
-        txt = (
-            "Verified pause at p = 0.1\n"
-            f"unencoded:            10.00%\n"
-            f"exact, q = 0:         {row[f'{_LOGICAL}_exact']:.2%}\n"
-            f"MC,      q = 0:       {row[_LOGICAL]:.2%} "
-            f"[{row[f'{_LOGICAL}_ci_low']:.2%}, {row[f'{_LOGICAL}_ci_high']:.2%}]\n"
-            f"exact, q = 0.02:      {nrow[f'{_LOGICAL}_exact']:.2%}\n"
-            f"MC,      q = 0.02:    {nrow[_LOGICAL]:.2%} "
-            f"[{nrow[f'{_LOGICAL}_ci_low']:.2%}, {nrow[f'{_LOGICAL}_ci_high']:.2%}]"
-        )
-        ax.text(0.135, 0.02, txt, fontsize=9.5, family="monospace",
-                bbox=dict(boxstyle="round", fc="white", ec="#999999"))
+        clean_anchor = clean[np.isclose(clean["p"], 0.1)]
+        noisy_anchor = noisy[np.isclose(noisy["p"], 0.1)]
+        if len(clean_anchor) and len(noisy_anchor):
+            row, nrow = clean_anchor.iloc[0], noisy_anchor.iloc[0]
+            ax.axvline(0.1, color="#bbbbbb", lw=1.0, linestyle=":")
+            txt = (
+                "Verified pause at p = 0.1\n"
+                f"unencoded:            10.00%\n"
+                f"exact, q = 0:         {row[f'{_LOGICAL}_exact']:.2%}\n"
+                f"MC,      q = 0:       {row[_LOGICAL]:.2%} "
+                f"[{row[f'{_LOGICAL}_ci_low']:.2%}, {row[f'{_LOGICAL}_ci_high']:.2%}]\n"
+                f"exact, q = 0.02:      {nrow[f'{_LOGICAL}_exact']:.2%}\n"
+                f"MC,      q = 0.02:    {nrow[_LOGICAL]:.2%} "
+                f"[{nrow[f'{_LOGICAL}_ci_low']:.2%}, {nrow[f'{_LOGICAL}_ci_high']:.2%}]"
+            )
+            ax.text(0.135, 0.02, txt, fontsize=9.5, family="monospace",
+                    bbox=dict(boxstyle="round", fc="white", ec="#999999"))
 
     if final:
         check = frame[np.isclose(frame["p"], 0.5)]
@@ -541,11 +561,14 @@ def render_animation_b(outdir: Path, fps: int = FPS_DEFAULT,
 
     ``frame_indices`` optionally restricts which timeline frames are
     rendered (used by the test suite to exercise the final frame cheaply);
-    by default all 336 frames (28 s at 12 fps) are produced.
+    by default all 336 frames (28 s at 12 fps) are produced. Partial renders
+    write ``anim_sweep_partial.*`` and are marked in the verification
+    record, so they cannot replace a full release silently.
     """
     from matplotlib.lines import Line2D
 
     frame = _load_sweep(csv_path, outdir)
+    validate_sweep_csv(frame)
     frames = []
     n_frames = 336  # 28.0 s at 12 fps
     indices = list(frame_indices) if frame_indices is not None else range(n_frames)
@@ -571,8 +594,9 @@ def render_animation_b(outdir: Path, fps: int = FPS_DEFAULT,
             caption = ("Pause at p = 0.1: encoding cuts logical failures from 10% (unencoded) "
                        "to 2.8%; a 2% readout flip rate raises it to 3.37%.")
         elif state["final"]:
-            caption = ("Full sweep: Monte Carlo tracks the exact curves within statistical "
-                       "error. Adaptive shot budget, at least 100,000 shots per point.")
+            p_last = float(frame.loc[frame["p"] <= 0.31, "p"].max())
+            caption = (f"Full sweep to the last sampled p = {p_last:.2f}: Monte Carlo "
+                       f"tracks the exact curves within statistical error. {budget_label(frame)}.")
         else:
             caption = ("One correction round: independent X errors (p) and noisy parity "
                        "reports (q). Curves: exact 32-event enumeration; markers: seeded "
@@ -582,12 +606,15 @@ def render_animation_b(outdir: Path, fps: int = FPS_DEFAULT,
         frames.append(_grab(fig))
         plt.close(fig)
 
-    mp4 = outdir / "anim_sweep.mp4"
-    gif = outdir / "anim_sweep.gif"
+    partial = frame_indices is not None
+    stem = "anim_sweep_partial" if partial else "anim_sweep"
+    mp4 = outdir / f"{stem}.mp4"
+    gif = outdir / f"{stem}.gif"
     _save_frames(frames, mp4, gif, fps)
     info = _probe(mp4, gif, fps)
     info.update({
-        "name": "anim_sweep - p-sweep with Monte Carlo estimates",
+        "name": f"{stem} - p-sweep with Monte Carlo estimates"
+                + (" (partial render)" if partial else ""),
         "mp4": str(mp4), "gif": str(gif),
         "mp4_sha256": _sha256(mp4), "gif_sha256": _sha256(gif),
         "content": "driven by results/sweep.csv (same records as the comparison figure); "
@@ -598,5 +625,15 @@ def render_animation_b(outdir: Path, fps: int = FPS_DEFAULT,
             "sweep", outdir, frame_indices)],
     })
     # merge with animation A's record if present
-    _merge_record(outdir, info)
+    _merge_record(outdir, info, fps=fps)
     return [mp4, gif]
+
+
+def budget_label(frame) -> str:
+    """Describe the shot budget from the run metadata, not assumptions."""
+    shots_min = int(frame["shots"].min())
+    shots_max = int(frame["shots"].max())
+    if shots_min == shots_max:
+        return f"Fixed shot budget, {shots_min:,} shots per point"
+    return (f"Adaptive shot budget, {shots_min:,}-{shots_max:,} shots "
+            "per point (at least 100,000)")

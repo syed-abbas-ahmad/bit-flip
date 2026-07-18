@@ -50,6 +50,13 @@ def cmd_simulate(args: argparse.Namespace) -> int:
 def cmd_figure(args: argparse.Namespace) -> int:
     if not args.csv.exists():
         raise SystemExit(f"CSV not found: {args.csv} (run 'bitflip simulate' first)")
+    # Validate the schema before creating any output directory, so a bad
+    # input fails without leaving empty folders behind.
+    import pandas as pd
+
+    from .plotting import validate_sweep_csv
+
+    validate_sweep_csv(pd.read_csv(args.csv))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     make_figure(args.csv, args.out)
     print(f"Wrote figure to {args.out}")
@@ -70,10 +77,14 @@ def cmd_table(args: argparse.Namespace) -> int:
 def cmd_animate(args: argparse.Namespace) -> int:
     from .animate import render_animation_a, render_animation_b
 
+    if not args.csv.exists():
+        raise SystemExit(
+            f"CSV not found: {args.csv} (run 'python -m bitflip simulate' first;"
+            " animate does not silently simulate a substitute dataset)"
+        )
     args.outdir.mkdir(parents=True, exist_ok=True)
-    csv = args.csv if args.csv.exists() else None
     paths_a = render_animation_a(args.outdir, fps=args.fps)
-    paths_b = render_animation_b(args.outdir, fps=args.fps, csv_path=csv)
+    paths_b = render_animation_b(args.outdir, fps=args.fps, csv_path=args.csv)
     for path in paths_a + paths_b:
         print(f"Wrote {path}")
     return 0
