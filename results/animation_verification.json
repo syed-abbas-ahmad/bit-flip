@@ -14,8 +14,8 @@
       "name": "anim_round - one-round walkthrough",
       "mp4": "results\\anim_round.mp4",
       "gif": "results\\anim_round.gif",
-      "mp4_sha256": "dff2b746c57abb2bb8ef88117a79e3b7dcf26fcb64e3b67cfc4bb7ee6288a467",
-      "gif_sha256": "3f843c657830445de2fa699c5d1f05b48d333755f92f362999bf1f3f23eb81a9",
+      "mp4_sha256": "49f536a79296207857850342a229cd10612aa2e112d7eaa713dacb7862c20c33",
+      "gif_sha256": "bb834bba1037d535b2c36bc4934447c028c02c9434121170e28546aa425945b2",
       "content": "three verified scenarios: clean correction (mask 010, reported 11), misleading report (mask 100, reported 11 -> residual 110, logical failure), false report (mask 000, reported 01 -> residual 001, logical survives)",
       "previews": [
         "results\\preview_round_opening.png",
@@ -34,8 +34,8 @@
       "name": "anim_sweep - p-sweep with Monte Carlo estimates",
       "mp4": "results\\anim_sweep.mp4",
       "gif": "results\\anim_sweep.gif",
-      "mp4_sha256": "faae66e3aedf3d2ca6bc5d9bfe6b708b7387c348241c5746653d507b75e4ea86",
-      "gif_sha256": "de44fe905d9f704096dd6f9de176c9ebf0f35afc4051c64e1142f1654061c316",
+      "mp4_sha256": "36796f29231eaaa1a1e2962465593bdbc6c6d7742625f1e66dc3b45bf1d0c1ec",
+      "gif_sha256": "cbaa7dd2078d7c14e9022f71a749e6aa617d76eca1105e7340f09960c8c847b5",
       "content": "driven by results/sweep.csv (same records as the comparison figure); pause at p=0.1 with verified numbers; final frame includes the p=0.5 check",
       "previews": [
         "results\\preview_sweep_opening.png",
