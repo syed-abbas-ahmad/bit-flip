@@ -50,14 +50,32 @@ amplitudes.
 
 **Why parities hide the logical amplitudes.** The checks are *measured*
 stabilizers Z₁Z₂ and Z₂Z₃, not reads of individual data bits. Both |000⟩ and
-|111⟩ lie in every syndrome eigenspace, so the syndrome carries no
-information about α, β. (Reading data bits individually would collapse the
-state - that is why the model uses ideal stabilizer reports with classical
-report noise, not data-bit reads.)
+|111⟩ lie in the same (00) eigenspace of both stabilizers. After a fixed
+error mask m, the two components become |m⊕000⟩ and |m⊕111⟩ - the
+**error-shifted** codewords - and both shifted words carry the syndrome of m.
+For mask 100, for example, the components become |100⟩ and |011⟩, and both
+have syndrome 10. The stabilizer measurement therefore projects the state
+onto that syndrome sector and returns no information about α, β, which is
+why the relative amplitudes survive under this channel. (Reading data bits
+individually would collapse the state - that is why the model uses ideal
+stabilizer reports with classical report noise, not data-bit reads. Both
+claims above are checked programmatically in `tests/test_model.py`.)
 
 **The clean law.** With truthful reports (q = 0) the decoder removes any
-single flip exactly, so the logical bit is wrong iff two or three data qubits
-flipped. Listing all eight masks (including 000 and 111):
+single flip exactly. Clean correction does **not** preserve the Hamming
+weight: 010 corrects to 000 (weight 1 → 0) and 110 corrects to 111
+(weight 2 → 3). What it preserves is the **majority bit**. The four
+input-weight cases (verified against the code in `tests/test_model.py`):
+
+| Input weight | Corrected block | Majority bit |
+|---|---|---|
+| 0 | 000 | 0 |
+| 1 | 000 | 0 (single error removed) |
+| 2 | 111 | 1 (logical failure) |
+| 3 | 111 | 1 (logical X inside the code space) |
+
+The logical bit is wrong iff two or three data qubits flipped. Listing all
+eight masks (including 000 and 111):
 
 ```
 L0 = C(3,2)·p²(1−p) + p³ = 3p² − 2p³
@@ -98,6 +116,21 @@ At p = 0.1, q = 0.02 the exact 32-event enumeration gives
 enumeration. Curves: analytic laws; markers: Monte Carlo with Wilson 95%
 intervals; dashed: unencoded baseline. Inset: the p = 0.5 boundary check.*
 
+### Correction vs no feedback at p = 0.1
+
+The data imply a comparison worth stating explicitly. If the decoder
+**ignores the reports** and goes straight to the ideal final majority, the
+logical failure rate is just the clean law L0 = **2.8%**, for either q,
+because the reports are never used. **Perfect** active correction reaches
+that same terminal logical rate (2.8%) - its benefit is that it restores the
+block to the code space, i.e. it removes the residual physical errors that
+matter once more rounds or storage follow. **Acting on 2% noisy reports**
+instead raises the terminal logical rate to **3.37024%**, a penalty of
+**0.57024 percentage points** over taking the final majority without
+feedback. A representative corrected bit can still carry a physical error
+(the residual-X observable, 6.65%). This comparison shares the clean curve
+in the figure above: the q = 0 curve is simultaneously the no-feedback rate.
+
 ## What one round of this model establishes - and what it leaves out
 
 **Established.** With truthful reports, majority decoding turns ~p failure
@@ -119,11 +152,12 @@ bitflip/            package (single implementation for CLI and notebook)
   model.py          masks, syndrome order, correction table, majority
   enumeration.py    exact 32-event oracle (no simulator imports)
   simulation.py     seeded NumPy Monte Carlo, Wilson intervals, shot budget
+  anchors.py        verified reference anchors, each bound to its own (p, q)
   scenarios.py      verified walkthrough scenarios (tested vs the oracle)
   plotting.py       comparison figure
   animate.py        both animations (MP4 + looping GIF + previews)
   cli.py            python -m bitflip {simulate,figure,table,animate,all}
-tests/              pytest suite (38 tests across 6 files)
+tests/              pytest suite (45 tests across 8 files)
 scripts/build_notebook.py   builds and executes the delivered notebook
 notebooks/bitflip_one_round.ipynb   executed notebook, runnable top to bottom
 results/            CSV, figure, animations, previews, verification record
@@ -131,23 +165,35 @@ results/            CSV, figure, animations, previews, verification record
 
 ## How to run
 
-Setup (any Python ≥ 3.11; delivered with 3.14.0):
+**Reference workflow** (tested on Windows 11 with CPython 3.14.0; the six
+runtime pins in `requirements.txt` reproduce the delivered artifacts
+byte-identically, including the media encodings). Use the venv's own
+interpreter throughout:
 
 ```powershell
-py --version                 # or: python --version
-py -m pip install -e .
+py -3.14 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -e ".[dev]"
+.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m bitflip all
+.\.venv\Scripts\python.exe -m jupyter nbconvert --to notebook --execute --inplace notebooks/bitflip_one_round.ipynb
 ```
+
+Alternative quick start: `py -m pip install -e .` installs the runtime
+package with unpinned newest dependencies. The CSV reproduces identically on
+newer library versions, but media encodings (PNG/GIF/MP4 bytes) may differ
+because encoder libraries change; install the pins above for byte-identical
+media.
 
 Run tests:
 
 ```powershell
-py -m pytest
+.\.venv\Scripts\python.exe -m pytest
 ```
 
 Regenerate everything (CSV → figure → animations):
 
 ```powershell
-py -m bitflip all
+.\.venv\Scripts\python.exe -m bitflip all
 ```
 
 Execute the notebook (identical seed and implementation; rewrites
@@ -184,14 +230,18 @@ SHA-256 hashes).
 
 ### Statistical tolerance used in tests
 
-The suite never gates each sampled point on its own 95% interval — with ~31
-points that fails by chance ~1 time in 20. Each point contributes a z-score
-(MC − exact)/σ, with σ from the exact binomial rate floored at 1e-15 (so p = 0
-points, which cannot fail, contribute z = 0); tests require max|z| < 4 **and**
-reduced χ² = mean(z²) < 2.5 across all points. Delivered data: max|z| = 2.93,
-χ̄² = 1.12 over all 64 CSV rows (1.16 if the two p = 0 rows are excluded).
-Exact-vs-analytic checks use abs tol 1e-12 (documented floating-point
-tolerance). Seeds are fixed a priori, never chosen for attractive agreement.
+The suite never gates each sampled point on its own 95% interval: 5% is the
+nominal *per-interval* miss probability, so across 31 independent intervals
+with exactly 95% coverage the chance of at least one miss is about 80%.
+Instead, each of the 64 CSV rows contributes a z-score (MC − exact)/σ, with
+σ from the exact binomial rate floored at 1e-15. The two deterministic
+p = 0 rows are checked explicitly (zero failures required) and contribute
+z = 0. The tests require max|z| < 4 **and** reduced χ² = mean(z²) < 2.5.
+Delivered data: max|z| = 2.93 and χ̄² = 1.12 over all 64 rows (1.15 if the
+two deterministic rows are excluded - the value depends on that subset
+choice, which is why the convention is stated here). Exact-vs-analytic
+checks use abs tol 1e-12 (documented floating-point tolerance). Seeds are
+fixed a priori, never chosen for attractive agreement.
 
 ## Animations
 

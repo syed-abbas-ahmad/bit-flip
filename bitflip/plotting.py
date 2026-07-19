@@ -24,6 +24,39 @@ COLOR_NOISY = "#D55E00"
 
 LOGICAL = "logical_failure"
 
+#: Columns every sweep CSV must contain for the figure and animations.
+REQUIRED_CSV_COLUMNS = (
+    "p", "q", "shots",
+    "logical_failure", "logical_failure_exact",
+    "logical_failure_ci_low", "logical_failure_ci_high",
+    "any_residual_x", "any_residual_x_exact",
+    "unencoded_failure_exact",
+)
+
+
+def validate_sweep_csv(frame: pd.DataFrame) -> None:
+    """Raise a clear error if the frame cannot support the figure/movies.
+
+    The published schema is the CSV written by ``bitflip simulate``: both q
+    values (0 and 0.02) across a common p grid, the ``shots`` column, the
+    sampled rates with Wilson bounds and the exact oracle rates. Partial
+    schemas (a single q value, missing exact columns) are rejected here
+    instead of failing later with an IndexError deep inside rendering.
+    """
+    missing = [c for c in REQUIRED_CSV_COLUMNS if c not in frame.columns]
+    if missing:
+        raise ValueError(
+            f"sweep CSV is missing required columns: {missing}; this schema is "
+            "produced by 'python -m bitflip simulate'"
+        )
+    for q, name in ((0.0, "q = 0"), (0.02, "q = 0.02")):
+        if not np.isclose(frame["q"], q).any():
+            raise ValueError(
+                f"sweep CSV contains no rows for {name}; both q values are "
+                "required (produced by 'python -m bitflip simulate' without "
+                "filtering)"
+            )
+
 
 def make_figure(csv_path, out_path: str) -> plt.Figure:
     """Draw the sweep figure from the CSV written by ``bitflip simulate``.
@@ -33,6 +66,7 @@ def make_figure(csv_path, out_path: str) -> plt.Figure:
     unencoded baseline. Inset panel: the p=0.5 boundary check.
     """
     frame = pd.read_csv(csv_path)
+    validate_sweep_csv(frame)
     sweep = frame[np.isclose(frame["p"], frame["p"].round(2)) & (frame["p"] <= 0.31)]
     check = frame[np.isclose(frame["p"], 0.5)]
 
@@ -63,14 +97,20 @@ def make_figure(csv_path, out_path: str) -> plt.Figure:
                     markersize=3.4, elinewidth=0.9, capsize=1.6, linestyle="none",
                     alpha=0.85, label=label)
 
-    # Labels on the curves, not just color.
+    # Labels on the curves, not just color. Every arrow target comes from
+    # the same data row as its x coordinate, so annotations touch the curve
+    # they name.
     ax.annotate("unencoded: p", xy=(0.245, 0.245), xytext=(0.155, 0.20),
                 color=COLOR_UNENCODED, fontsize=10,
                 arrowprops=dict(arrowstyle="->", color=COLOR_UNENCODED, lw=1.0))
-    ax.annotate("q = 0: 3p² − 2p³", xy=(0.21, clean[f"{LOGICAL}_exact"].iloc[-1]),
+    anchor_row = clean[np.isclose(clean["p"], 0.21)].iloc[0]
+    ax.annotate("q = 0: 3p² − 2p³",
+                xy=(float(anchor_row["p"]), float(anchor_row[f"{LOGICAL}_exact"])),
                 xytext=(0.215, 0.10), color=COLOR_CLEAN, fontsize=10,
                 arrowprops=dict(arrowstyle="->", color=COLOR_CLEAN, lw=1.0))
-    ax.annotate("q = 0.02", xy=(0.30, noisy[f"{LOGICAL}_exact"].iloc[-1]),
+    noisy_row = noisy[np.isclose(noisy["p"], 0.30)].iloc[0]
+    ax.annotate("q = 0.02",
+                xy=(float(noisy_row["p"]), float(noisy_row[f"{LOGICAL}_exact"])),
                 xytext=(0.255, 0.032), color=COLOR_NOISY, fontsize=10,
                 arrowprops=dict(arrowstyle="->", color=COLOR_NOISY, lw=1.0))
 
@@ -130,10 +170,14 @@ def make_figure(csv_path, out_path: str) -> plt.Figure:
 
     shots_min = int(frame["shots"].min())
     shots_max = int(frame["shots"].max())
-    shots_txt = (
-        f"Seeded Monte Carlo, adaptive budget {shots_min:,}-{shots_max:,} shots "
-        "per point; Wilson 95% intervals"
-    )
+    if shots_min == shots_max:
+        shots_txt = (f"Seeded Monte Carlo, fixed budget {shots_min:,} shots per "
+                     "point; Wilson 95% intervals")
+    else:
+        shots_txt = (
+            f"Seeded Monte Carlo, adaptive budget {shots_min:,}-{shots_max:,} shots "
+            "per point; Wilson 95% intervals"
+        )
     fig.text(0.01, 0.01, shots_txt, fontsize=7.5, color="#555555")
     fig.tight_layout(rect=(0, 0.025, 1, 1))
     fig.savefig(out_path, dpi=200)

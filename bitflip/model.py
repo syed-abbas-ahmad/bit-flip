@@ -56,8 +56,13 @@ def apply_correction(error_mask, reported) -> list[int]:
     outcome: 0 or 3 is inside the code space (an all-ones block is a logical
     X, i.e. a logical bit flip), weight 1 or 2 is outside the code space.
     """
+    err = list(error_mask)
+    if len(err) != N_QUBITS:
+        raise ValueError(f"error mask must have {N_QUBITS} bits, got {len(err)}")
+    if any(bit not in (0, 1) for bit in err):
+        raise ValueError(f"error mask bits must be 0 or 1, got {err}")
     corr = correction_for(reported)
-    return [int(e) ^ c for e, c in zip(error_mask, corr)]
+    return [int(e) ^ c for e, c in zip(err, corr)]
 
 
 def majority(bits) -> int:

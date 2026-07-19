@@ -6,6 +6,7 @@ import pytest
 from bitflip.enumeration import clean_logical_failure, exact_rates
 from bitflip.simulation import (
     RATE_COLUMNS,
+    run_sweep,
     shots_for_point,
     simulate_point,
     wilson_interval,
@@ -116,3 +117,17 @@ def test_adaptive_budget_increases_for_rare_failures():
     assert shots_for_point(0.01, 0.0) > shots_for_point(0.25, 0.0)
     assert shots_for_point(0.0, 0.02) == 100_000  # no failures possible: minimum
     assert 100_000 <= shots_for_point(0.1, 0.02) <= 1_000_000
+
+
+def test_run_sweep_materializes_iterables():
+    # A one-shot q iterator must be materialized: the old code exhausted it
+    # after the first p, silently producing no results for later p values.
+    results = run_sweep([0.0, 0.1], iter([0.0, 0.1]), shots=100, seed=1)
+    assert len(results) == 4  # 2 p x 2 q
+
+
+def test_run_sweep_rejects_off_grid_values():
+    # Seed derivation quantizes p and q to 4 decimals; distinct values that
+    # agree to 4 decimals would silently share a random stream.
+    with pytest.raises(ValueError, match="4-decimal"):
+        run_sweep([0.100001], (0.02,), shots=100, seed=1)

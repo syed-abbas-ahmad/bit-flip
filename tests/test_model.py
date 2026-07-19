@@ -20,6 +20,14 @@ def test_syndrome_order():
     assert true_syndrome((1, 1, 1)) == (0, 0)
 
 
+def test_apply_correction_validates_mask_shape_and_bits():
+    with pytest.raises(ValueError):
+        apply_correction((1, 0), (0, 0))       # wrong length
+    with pytest.raises(ValueError):
+        apply_correction((1, 0, 2), (0, 0))    # non-binary bit
+    assert apply_correction((1, 0, 0), (1, 0)) == [0, 0, 0]
+
+
 def test_correction_table():
     assert correction_for((0, 0)) == [0, 0, 0]
     assert correction_for((1, 0)) == [1, 0, 0]
@@ -68,3 +76,36 @@ def test_bad_report_on_clean_block_injects_residual_but_majority_holds():
     final = apply_correction((0, 0, 0), (0, 1))
     assert final == [0, 0, 1]
     assert logical_outcome((0, 0, 0), (0, 1)) == 0
+
+
+def test_error_shifted_codewords_share_the_mask_syndrome():
+    # A fixed error mask m moves both codewords to m XOR codeword, and both
+    # shifted words carry the syndrome of m. For mask 100 the components
+    # become 100 and 011, both with syndrome 10: the stabilizer measurement
+    # projects onto that sector without revealing the amplitudes.
+    for mask in [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1),
+                 (1, 1, 0), (1, 0, 1), (0, 1, 1), (1, 1, 1)]:
+        shifted_a = tuple(m ^ c for m, c in zip(mask, (0, 0, 0)))
+        shifted_b = tuple(m ^ c for m, c in zip(mask, (1, 1, 1)))
+        assert true_syndrome(shifted_a) == true_syndrome(mask)
+        assert true_syndrome(shifted_b) == true_syndrome(mask)
+    assert true_syndrome((1, 0, 0)) == (1, 0)
+    assert true_syndrome((0, 1, 1)) == (1, 0)
+
+
+def test_truthful_correction_preserves_the_majority_bit_not_the_weight():
+    # Clean correction does NOT preserve Hamming weight: 010 corrects to
+    # 000 (weight 1 -> 0) and 110 corrects to 111 (weight 2 -> 3). What it
+    # preserves is the majority bit. The four input-weight cases:
+    #   weight 0 -> corrected 000, majority 0
+    #   weight 1 -> corrected 000, majority 0 (single error removed)
+    #   weight 2 -> corrected 111, majority 1 (logical failure)
+    #   weight 3 -> corrected 111, majority 1 (logical X inside code space)
+    expected = {0: ([0, 0, 0], 0), 1: ([0, 0, 0], 0),
+                2: ([1, 1, 1], 1), 3: ([1, 1, 1], 1)}
+    for mask in [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1),
+                 (1, 1, 0), (1, 0, 1), (0, 1, 1), (1, 1, 1)]:
+        corrected = apply_correction(mask, true_syndrome(mask))
+        weight, outcome = sum(mask), logical_outcome(mask, true_syndrome(mask))
+        assert corrected == expected[weight][0]
+        assert outcome == expected[weight][1]
