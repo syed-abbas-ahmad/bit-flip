@@ -29,19 +29,24 @@ REQUIRED_CSV_COLUMNS = (
     "p", "q", "shots",
     "logical_failure", "logical_failure_exact",
     "logical_failure_ci_low", "logical_failure_ci_high",
-    "any_residual_x", "any_residual_x_exact",
-    "unencoded_failure_exact",
+    "unencoded_failure", "unencoded_failure_exact",
+    "unencoded_failure_ci_low", "unencoded_failure_ci_high",
 )
 
+#: Numeric columns that must be present and finite for rendering.
+NUMERIC_COLUMNS = tuple(c for c in REQUIRED_CSV_COLUMNS if c not in ("p", "q"))
 
-def validate_sweep_csv(frame: pd.DataFrame) -> None:
-    """Raise a clear error if the frame cannot support the figure/movies.
+
+def validate_sweep_csv(frame: pd.DataFrame) -> pd.DataFrame:
+    """Validate the CSV schema for the figure and animations; return a copy
+    sorted by (p, q) so shuffled rows cannot be connected out of order.
 
     The published schema is the CSV written by ``bitflip simulate``: both q
-    values (0 and 0.02) across a common p grid, the ``shots`` column, the
-    sampled rates with Wilson bounds and the exact oracle rates. Partial
-    schemas (a single q value, missing exact columns) are rejected here
-    instead of failing later with an IndexError deep inside rendering.
+    values (0 and 0.02) across a common p grid reaching at least p = 0.1,
+    the ``shots`` column, the sampled rates with Wilson bounds and the exact
+    oracle rates. Partial schemas (a single q value, missing exact columns,
+    non-finite values) are rejected here instead of failing later with a
+    KeyError or IndexError deep inside rendering.
     """
     missing = [c for c in REQUIRED_CSV_COLUMNS if c not in frame.columns]
     if missing:
@@ -56,6 +61,16 @@ def validate_sweep_csv(frame: pd.DataFrame) -> None:
                 "required (produced by 'python -m bitflip simulate' without "
                 "filtering)"
             )
+    numeric = frame[list(NUMERIC_COLUMNS)].to_numpy(dtype=float)
+    if not np.isfinite(numeric).all():
+        raise ValueError("sweep CSV contains non-finite values in required columns")
+    sweep_max = float(frame.loc[frame["p"] <= 0.31, "p"].max())
+    if sweep_max < 0.1:
+        raise ValueError(
+            f"sweep CSV must reach at least p = 0.1 (got {sweep_max}); the "
+            "verified pause point depends on it"
+        )
+    return frame.sort_values(["p", "q"]).reset_index(drop=True)
 
 
 def make_figure(csv_path, out_path: str) -> plt.Figure:
@@ -65,8 +80,7 @@ def make_figure(csv_path, out_path: str) -> plt.Figure:
     exact curves, Monte Carlo estimates with Wilson 95% intervals, and the
     unencoded baseline. Inset panel: the p=0.5 boundary check.
     """
-    frame = pd.read_csv(csv_path)
-    validate_sweep_csv(frame)
+    frame = validate_sweep_csv(pd.read_csv(csv_path))
     sweep = frame[np.isclose(frame["p"], frame["p"].round(2)) & (frame["p"] <= 0.31)]
     check = frame[np.isclose(frame["p"], 0.5)]
 
@@ -158,9 +172,12 @@ def make_figure(csv_path, out_path: str) -> plt.Figure:
                      color=[COLOR_UNENCODED, COLOR_CLEAN, COLOR_NOISY])
         ax_check.axhline(0.5, color="black", linewidth=0.8, linestyle=":")
         ax_check.set_xticks(xs, labels, fontsize=8, rotation=20)
-        ax_check.set_ylim(0, 0.62)
-        ax_check.set_title("p = 0.5 check", fontsize=10)
-        ax_check.text(0.5, 0.545, "both 0.5", ha="center", fontsize=9)
+        # Scale to the sampled values and their intervals: a degenerate
+        # small-shot run at p = 0.5 can estimate 0% or 100%.
+        top = max(0.62, (max(vals) + max(e2 for e1, e2 in zip(*errs))) * 1.1)
+        ax_check.set_ylim(0, top)
+        ax_check.set_title("p = 0.5 check (exact: 0.5)", fontsize=10)
+        ax_check.text(0.5, 0.5 + 0.04 * top, "both 0.5", ha="center", fontsize=9)
         ax_check.grid(alpha=0.25, axis="y")
     else:
         ax_check.axis("off")

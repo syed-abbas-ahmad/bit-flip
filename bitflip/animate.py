@@ -162,6 +162,8 @@ def _merge_record(outdir: Path, info: dict, fps: int = FPS_DEFAULT):
 def _record(outdir: Path, entries: list[dict], fps: int = FPS_DEFAULT):
     record = {
         "fps": fps,
+        "fps_note": "top-level fps is the render default; each entry records "
+                    "the fps it was actually encoded with",
         "size_px": [960, 540],
         "note": "Frame counts and durations probed from the written files; "
                 "sha256 identifies the exact delivered artifacts.",
@@ -403,12 +405,14 @@ def render_animation_a(outdir: Path, fps: int = FPS_DEFAULT,
 
     partial = frame_indices is not None
     stem = "anim_round_partial" if partial else "anim_round"
+    preview_stem = "round_partial" if partial else "round"
     mp4 = outdir / f"{stem}.mp4"
     gif = outdir / f"{stem}.gif"
     _save_frames(frames, mp4, gif, fps)
     info = _probe(mp4, gif, fps)
     info.update({
         "name": f"{stem} - one-round walkthrough" + (" (partial render)" if partial else ""),
+        "fps": fps,
         "mp4": str(mp4), "gif": str(gif),
         "mp4_sha256": _sha256(mp4), "gif_sha256": _sha256(gif),
         "content": "three verified scenarios: clean correction (mask 010, reported 11), "
@@ -418,7 +422,7 @@ def render_animation_a(outdir: Path, fps: int = FPS_DEFAULT,
             mp4, frames,
             {"opening": 0, "clean_correction": 84, "misleading_report": 147,
              "misleading_outcome": 190, "false_report_outcome": 260, "final": 311},
-            "round", outdir, frame_indices)],
+            preview_stem, outdir, frame_indices)],
     })
     _merge_record(outdir, info, fps=fps)
     return [mp4, gif]
@@ -568,12 +572,15 @@ def render_animation_b(outdir: Path, fps: int = FPS_DEFAULT,
     from matplotlib.lines import Line2D
 
     frame = _load_sweep(csv_path, outdir)
-    validate_sweep_csv(frame)
+    frame = validate_sweep_csv(frame)
+    # The sweep endpoint comes from the data: never draw beyond the last
+    # sampled p on the sweep grid (the p = 0.5 boundary rows are excluded).
+    p_final = float(frame.loc[frame["p"] <= 0.31, "p"].max())
     frames = []
     n_frames = 336  # 28.0 s at 12 fps
     indices = list(frame_indices) if frame_indices is not None else range(n_frames)
     for idx in indices:
-        state = _sweep_frame_state(idx)
+        state = _sweep_frame_state(idx, p_final=p_final)
         fig = plt.figure(figsize=SIZE, dpi=100)
         ax = fig.add_axes((0.09, 0.155, 0.88, 0.745))
         _draw_sweep_axes(ax, frame, state["p_hi"], state["paused"], state["final"])
@@ -594,8 +601,7 @@ def render_animation_b(outdir: Path, fps: int = FPS_DEFAULT,
             caption = ("Pause at p = 0.1: encoding cuts logical failures from 10% (unencoded) "
                        "to 2.8%; a 2% readout flip rate raises it to 3.37%.")
         elif state["final"]:
-            p_last = float(frame.loc[frame["p"] <= 0.31, "p"].max())
-            caption = (f"Full sweep to the last sampled p = {p_last:.2f}: Monte Carlo "
+            caption = (f"Full sweep to the last sampled p = {p_final:.2f}: Monte Carlo "
                        f"tracks the exact curves within statistical error. {budget_label(frame)}.")
         else:
             caption = ("One correction round: independent X errors (p) and noisy parity "
@@ -608,6 +614,7 @@ def render_animation_b(outdir: Path, fps: int = FPS_DEFAULT,
 
     partial = frame_indices is not None
     stem = "anim_sweep_partial" if partial else "anim_sweep"
+    preview_stem = "sweep_partial" if partial else "sweep"
     mp4 = outdir / f"{stem}.mp4"
     gif = outdir / f"{stem}.gif"
     _save_frames(frames, mp4, gif, fps)
@@ -615,6 +622,7 @@ def render_animation_b(outdir: Path, fps: int = FPS_DEFAULT,
     info.update({
         "name": f"{stem} - p-sweep with Monte Carlo estimates"
                 + (" (partial render)" if partial else ""),
+        "fps": fps,
         "mp4": str(mp4), "gif": str(gif),
         "mp4_sha256": _sha256(mp4), "gif_sha256": _sha256(gif),
         "content": "driven by results/sweep.csv (same records as the comparison figure); "
@@ -622,7 +630,7 @@ def render_animation_b(outdir: Path, fps: int = FPS_DEFAULT,
         "previews": [str(p) for p in _export_previews(
             mp4, frames,
             {"opening": 0, "pause_p01": 110, "final": 335},
-            "sweep", outdir, frame_indices)],
+            preview_stem, outdir, frame_indices)],
     })
     # merge with animation A's record if present
     _merge_record(outdir, info, fps=fps)
