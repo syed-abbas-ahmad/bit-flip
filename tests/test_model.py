@@ -28,6 +28,21 @@ def test_apply_correction_validates_mask_shape_and_bits():
     assert apply_correction((1, 0, 0), (1, 0)) == [0, 0, 0]
 
 
+def test_weight_two_error_with_truthful_reports_leaves_undetected_logical_x():
+    # 110 has the same parity reports as a single error on qubit 3: the
+    # decoder flips qubit 3 and produces 111. The final syndrome is zero,
+    # yet a logical X remains - the block is inside the code space but the
+    # physical errors were NOT removed. This is why "restores the code
+    # space" and "removes residual physical errors" are different claims.
+    mask = (1, 1, 0)
+    syn = true_syndrome(mask)
+    assert syn == (0, 1)  # same reports as a single error on qubit 3
+    corrected = apply_correction(mask, syn)
+    assert corrected == [1, 1, 1]
+    assert true_syndrome(corrected) == (0, 0)  # zero syndrome afterwards
+    assert logical_outcome(mask, syn) == 1     # undetected logical X
+
+
 def test_correction_table():
     assert correction_for((0, 0)) == [0, 0, 0]
     assert correction_for((1, 0)) == [1, 0, 0]

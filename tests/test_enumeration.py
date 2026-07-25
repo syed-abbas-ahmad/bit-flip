@@ -82,6 +82,21 @@ def test_rates_within_unit_interval():
                 assert 0.0 <= value <= 1.0
 
 
+def test_per_site_residual_marginals_and_residual_while_correct():
+    # The block-level "any residual X" observable (6.64912% at p=0.1,
+    # q=0.02) is a different physical question from per-qubit damage.
+    # Per-site marginals are asymmetric because the decoder breaks the
+    # symmetry: 4.656% / 3.39648% / 4.656% for qubits 1, 2 and 3.
+    table = event_table(0.1, 0.02)
+    for i, expected in enumerate([0.04656, 0.0339648, 0.04656]):
+        site = table.loc[table["final_block"].str[i] == "1", "prob"].sum()
+        assert site == pytest.approx(expected, abs=1e-9)
+    # Residual X while the ideal majority still gives the correct bit
+    # (weight exactly 1): 3.27888%. This equals 6.64912% - 3.37024%.
+    weight1 = table.loc[table["weight"] == 1, "prob"].sum()
+    assert weight1 == pytest.approx(0.0327888, abs=1e-9)
+
+
 def test_q_one_reports_are_still_decodable_deterministically():
     # q = 1 flips both reports deterministically: reported = NOT true.
     # Check the oracle against a hand-derived case: p=0 -> true 00,

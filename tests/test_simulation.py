@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from bitflip.cli import P_CHECK, P_SWEEP, Q_VALUES
 from bitflip.enumeration import clean_logical_failure, exact_rates
 from bitflip.simulation import (
     RATE_COLUMNS,
@@ -131,3 +132,16 @@ def test_run_sweep_rejects_off_grid_values():
     # agree to 4 decimals would silently share a random stream.
     with pytest.raises(ValueError, match="4-decimal"):
         run_sweep([0.100001], (0.02,), shots=100, seed=1)
+
+
+def test_published_grid_has_distinct_random_streams():
+    # The 64 published (p, q) settings must map to 64 distinct derived
+    # seeds (one 32-bit word each), so no two published points share a
+    # random stream.
+    seeds = []
+    for p in P_SWEEP + P_CHECK:
+        for q in Q_VALUES:
+            seq = np.random.SeedSequence(
+                entropy=20261122, spawn_key=(round(p * 10_000), round(q * 10_000)))
+            seeds.append(int(seq.generate_state(1, dtype=np.uint32)[0]))
+    assert len(seeds) == len(set(seeds)) == 64

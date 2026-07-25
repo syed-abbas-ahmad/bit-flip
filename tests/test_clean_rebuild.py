@@ -118,3 +118,81 @@ def test_exit_status_wiring(tmp_path, rebuild_module):
     # main() returns 2 for refused paths (usage/safety) without any build.
     rc = rebuild_module.main([str(tmp_path / "nope"), str(tmp_path / "dest")])
     assert rc == 2
+
+
+def test_main_pipeline_copies_sources_and_reports(tmp_path, monkeypatch, rebuild_module):
+    # Regression for the MYSELF re-audit: main() once skipped copy_sources()
+    # entirely, so pip failed on a missing requirements.txt. The wiring test
+    # mocks the slow steps (venv, pip, pytest, notebook) and lets the fake
+    # copy step populate a fresh destination with simulated pipeline outputs;
+    # the comparison must then pass.
+    candidate = tmp_path / "candidate"
+    rebuild = tmp_path / "rebuild"
+    (candidate / "results").mkdir(parents=True)
+    (candidate / "requirements.txt").write_text("numpy\n")
+    for rel, _ in rebuild_module.COMPARISONS:
+        (candidate / rel).write_text("same-bytes\n")
+
+    ran = []
+
+    def fake_copy(src, dst):
+        ran.append("copy")
+        (dst / "results").mkdir(parents=True, exist_ok=True)
+        (dst / "requirements.txt").write_text("numpy\n")
+        for rel, _ in rebuild_module.COMPARISONS:
+            (dst / rel).write_text("same-bytes\n")
+        (dst / "results" / "sweep_cli.csv").write_text("same-bytes\n")
+
+    class _FakeEnv:
+        def create(self, path):
+            ran.append("venv")
+
+    monkeypatch.setattr(rebuild_module, "copy_sources", fake_copy)
+    monkeypatch.setattr(rebuild_module.venv, "EnvBuilder", lambda **kw: _FakeEnv())
+    monkeypatch.setattr(
+        rebuild_module, "run",
+        lambda cmd, cwd, env=None:
+            ran.append(" ".join(map(str, cmd[1:4]))) or "")
+
+    rc = rebuild_module.main([str(candidate), str(rebuild)])
+    assert rc == 0
+    assert ran[0] == "copy"                       # sources copied FIRST
+    assert any("pytest" in step for step in ran)
+    assert sum("simulate" in step for step in ran) == 2  # sweep + CLI-vs-notebook check
+
+    report = (rebuild / "rebuild_report.json")
+    assert report.exists()                        # completed report written
+
+
+def test_main_pipeline_returns_nonzero_on_mismatch(tmp_path, monkeypatch, rebuild_module):
+    # A deliberately altered expected-identical artifact must produce a
+    # nonzero process status at the comparison step.
+    candidate = tmp_path / "candidate"
+    rebuild = tmp_path / "rebuild"
+    (candidate / "results").mkdir(parents=True)
+    (candidate / "requirements.txt").write_text("numpy\n")
+    for rel, _ in rebuild_module.COMPARISONS:
+        (candidate / rel).write_text("same-bytes\n")
+
+    def fake_copy(src, dst):
+        (dst / "results").mkdir(parents=True, exist_ok=True)
+        (dst / "requirements.txt").write_text("numpy\n")
+        for rel, _ in rebuild_module.COMPARISONS:
+            # One altered data artifact in the rebuild:
+            (dst / rel).write_text("same-bytes\n" if rel != "results/sweep.csv"
+                                   else "altered\n")
+        (dst / "results" / "sweep_cli.csv").write_text("altered\n")
+
+    class _FakeEnv:
+        def create(self, path):
+            pass
+
+    monkeypatch.setattr(rebuild_module, "copy_sources", fake_copy)
+    monkeypatch.setattr(rebuild_module.venv, "EnvBuilder", lambda **kw: _FakeEnv())
+    monkeypatch.setattr(rebuild_module, "run", lambda cmd, cwd, env=None: "")
+
+    rc = rebuild_module.main([str(candidate), str(rebuild)])
+    assert rc == 1
+    report = (rebuild / "rebuild_report.json")
+    assert report.exists()
+    assert report.read_text().count("MISMATCH") == 1

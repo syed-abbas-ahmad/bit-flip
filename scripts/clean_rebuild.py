@@ -18,6 +18,11 @@ data artifacts (CSV, figure) are always strict.
 Usage:
     py scripts\\clean_rebuild.py <candidate_root> <rebuild_root>
     py scripts\\clean_rebuild.py <candidate_root> <rebuild_root> --lenient-media
+    py scripts\\clean_rebuild.py <candidate_root> <rebuild_root> --compare-only
+
+``--compare-only`` skips the build and only re-compares existing
+``results/`` trees (used to re-verify a completed rebuild, including a
+deliberately altered artifact for the nonzero-exit check).
 """
 
 from __future__ import annotations
@@ -30,11 +35,17 @@ import sys
 import venv
 from pathlib import Path
 
-CANDIDATE = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else None
-REBUILD = Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else None
-LENIENT_MEDIA = "--lenient-media" in sys.argv[3:]
+ARGS = sys.argv[1:]
+CANDIDATE = Path(ARGS[0]).resolve() if len(ARGS) > 0 else None
+REBUILD = Path(ARGS[1]).resolve() if len(ARGS) > 1 else None
+LENIENT_MEDIA = "--lenient-media" in ARGS
+COMPARE_ONLY = "--compare-only" in ARGS
 EXCLUDE_DIRS = {".git", "bitflip.egg-info", "__pycache__", ".pytest_cache",
                 "results", ".venv"}
+
+#: Local-only workflow files that must never travel with a rebuild copy.
+LOCAL_ONLY = {"PROMPT.MD", "REVIEW_PROMPT.MD", "PROJECT_STATE.md", "AGENTS.md",
+              "PROJECT_PLAN.md", ".agents", "reviews"}
 
 #: (relative path, must be byte-identical). Media entries may be downgraded
 #: to warnings by --lenient-media; data artifacts are always strict.
@@ -52,11 +63,14 @@ class UnsafePathError(RuntimeError):
     """Raised when source/destination paths are missing, identical or nested."""
 
 
-def validate_paths(candidate: Path, rebuild: Path) -> tuple[Path, Path]:
+def validate_paths(candidate: Path, rebuild: Path,
+                   allow_populated: bool = False) -> tuple[Path, Path]:
     """Refuse unsafe source/destination combinations before any write.
 
-    Both must exist as directories (destination may exist only if empty),
-    must be distinct after resolution, and must not contain each other.
+    Both must exist as directories. The destination may exist only if empty
+    (or always, in ``allow_populated`` compare-only mode, which never
+    deletes and only adds a report file). Paths must be distinct after
+    resolution and must not contain each other.
     """
     candidate = Path(candidate).resolve()
     rebuild = Path(rebuild).resolve()
@@ -75,7 +89,7 @@ def validate_paths(candidate: Path, rebuild: Path) -> tuple[Path, Path]:
     if rebuild.exists():
         if not rebuild.is_dir():
             raise UnsafePathError(f"destination exists and is not a directory: {rebuild}")
-        if any(rebuild.iterdir()):
+        if not allow_populated and any(rebuild.iterdir()):
             raise UnsafePathError(
                 f"destination exists and is not empty: {rebuild}; existing "
                 "content is never deleted - choose a fresh directory"
@@ -84,12 +98,18 @@ def validate_paths(candidate: Path, rebuild: Path) -> tuple[Path, Path]:
 
 
 def copy_sources(candidate: Path, rebuild: Path):
-    if rebuild.exists():
-        # Only reachable for an empty directory (validated above).
-        pass
+    """Copy the tracked project sources into the rebuild directory.
+
+    Generated outputs (``results/``) are excluded: the pipeline regenerates
+    them and the comparison then checks them against the delivered bytes.
+    Local-only workflow files (prompts, project state, agent notes, review
+    records) never travel with a rebuild.
+    """
     rebuild.mkdir(parents=True, exist_ok=True)
     for item in candidate.iterdir():
-        if item.name in EXCLUDE_DIRS or item.name.endswith(".egg-info"):
+        if item.name in EXCLUDE_DIRS or item.name in LOCAL_ONLY:
+            continue
+        if item.name.endswith(".egg-info"):
             continue
         dest = rebuild / item.name
         if item.is_dir():
@@ -150,12 +170,14 @@ def compare_artifacts(candidate: Path, rebuild: Path,
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     lenient_media = "--lenient-media" in argv
-    argv = [a for a in argv if a != "--lenient-media"]
+    compare_only = "--compare-only" in argv
+    argv = [a for a in argv if a not in ("--lenient-media", "--compare-only")]
     if len(argv) != 2:
         print(__doc__)
         return 2
     try:
-        candidate, rebuild = validate_paths(Path(argv[0]), Path(argv[1]))
+        candidate, rebuild = validate_paths(Path(argv[0]), Path(argv[1]),
+                                            allow_populated=compare_only)
     except UnsafePathError as exc:
         print(f"REFUSED: {exc}")
         return 2
@@ -163,21 +185,38 @@ def main(argv: list[str] | None = None) -> int:
     print(f"candidate: {candidate}")
     print(f"rebuild:   {rebuild}")
 
+    if compare_only:
+        print("compare-only mode: skipping the build, comparing existing results/")
+        ok, report = compare_artifacts(candidate, rebuild, lenient_media=lenient_media)
+        same = sha256(rebuild / "results/sweep.csv") == sha256(
+            rebuild / "results/sweep_cli.csv")
+        report["notebook_vs_cli_csv_identical"] = same
+        ok = ok and same
+        (rebuild / "rebuild_report.json").write_text(json.dumps(report, indent=2))
+        print(json.dumps(report, indent=2))
+        print("CLEAN REBUILD:", "PASS" if ok else "FAIL")
+        return 0 if ok else 1
+
+    print("0. copy tracked sources")
+    copy_sources(candidate, rebuild)
+
     print("1. fresh venv + install (pinned delivered environment)")
     venv.EnvBuilder(with_pip=True, clear=True).create(rebuild / ".venv")
     py = rebuild / ".venv" / "Scripts" / "python.exe"
     run([str(py), "-m", "pip", "install", "--quiet", "-r", "requirements.txt"], rebuild)
     run([str(py), "-m", "pip", "install", "--quiet", "-e", ".[dev]"], rebuild)
 
-    print("2. tests")
-    out = run([str(py), "-m", "pytest", "-q"], rebuild)
-    print(out.strip().splitlines()[-1])
-
-    print("3. simulate + figure")
+    print("2. simulate (generate the CSV the tests read)")
     run([str(py), "-m", "bitflip", "simulate"], rebuild)
-    run([str(py), "-m", "bitflip", "figure"], rebuild)
 
-    print("4. animations")
+    print("3. tests")
+    out = run([str(py), "-m", "pytest", "-q"], rebuild)
+    lines = out.strip().splitlines()
+    if lines:
+        print(lines[-1])
+
+    print("4. figure + animations")
+    run([str(py), "-m", "bitflip", "figure"], rebuild)
     run([str(py), "-m", "bitflip", "animate"], rebuild)
 
     print("5. notebook execution")
