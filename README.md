@@ -121,15 +121,21 @@ intervals; dashed: unencoded baseline. Inset: the p = 0.5 boundary check.*
 The data imply a comparison worth stating explicitly. If the decoder
 **ignores the reports** and goes straight to the ideal final majority, the
 logical failure rate is just the clean law L0 = **2.8%**, for either q,
-because the reports are never used. **Perfect** active correction reaches
-that same terminal logical rate (2.8%) - its benefit is that it restores the
-block to the code space, i.e. it removes the residual physical errors that
-matter once more rounds or storage follow. **Acting on 2% noisy reports**
-instead raises the terminal logical rate to **3.37024%**, a penalty of
+because the reports are never used. With **perfect** parity reports,
+correction returns every block to the code space. It corrects a single data
+flip. Two or three flips can leave an **undetected logical X** - a weight-2
+mask such as 110 produces the same reports as a single error on qubit 3, the
+decoder flips that qubit, and the block ends as 111 with zero syndrome but
+the wrong logical bit. At a 10% data-flip rate and a 2% error probability
+per parity report, **6.64912%** of corrected blocks contain at least one
+residual X, and **3.37024%** give the wrong final majority - a penalty of
 **0.57024 percentage points** over taking the final majority without
-feedback. A representative corrected bit can still carry a physical error
-(the residual-X observable, 6.65%). This comparison shares the clean curve
-in the figure above: the q = 0 curve is simultaneously the no-feedback rate.
+feedback. Per qubit, the residual-X marginals are **4.656% / 3.39648% /
+4.656%** (the decoder breaks the symmetry), and in **3.27888%** of blocks a
+residual X remains while the ideal majority still gives the correct bit.
+These are different physical questions from the terminal logical rate, and
+all of them are verified against the oracle in the test suite. The q = 0
+curve in the figure above is simultaneously the no-feedback rate.
 
 ## What one round of this model establishes - and what it leaves out
 
@@ -157,7 +163,7 @@ bitflip/            package (single implementation for CLI and notebook)
   plotting.py       comparison figure
   animate.py        both animations (MP4 + looping GIF + previews)
   cli.py            python -m bitflip {simulate,figure,table,animate,all}
-tests/              pytest suite (45 tests across 8 files)
+tests/              pytest suite (67 tests across 9 files)
 scripts/build_notebook.py   builds and executes the delivered notebook
 notebooks/bitflip_one_round.ipynb   executed notebook, runnable top to bottom
 results/            CSV, figure, animations, previews, verification record
@@ -177,6 +183,12 @@ py -3.14 -m venv .venv
 .\.venv\Scripts\python.exe -m bitflip all
 .\.venv\Scripts\python.exe -m jupyter nbconvert --to notebook --execute --inplace notebooks/bitflip_one_round.ipynb
 ```
+
+Note the `.\.venv\Scripts\python.exe -m ...` pattern throughout: a bare
+`jupyter` on PATH can dispatch to a different Python installation. The
+executed notebook prints `sys.executable` and `bitflip.__file__` in its
+first cell - on a machine with several Python installs, check that both
+point inside `.venv` before trusting the outputs.
 
 Alternative quick start: `py -m pip install -e .` installs the runtime
 package with unpinned newest dependencies. The CSV reproduces identically on
@@ -219,7 +231,11 @@ SHA-256 hashes).
 
 - Master seed 20261122 (CLI and notebook defaults). Each (p, q) point gets a
   deterministic independent stream derived via `SeedSequence` spawn keys, so
-  results do not depend on sweep order.
+  results do not depend on sweep order. The seed is drawn from one 32-bit
+  word of the sequence; the 64 published settings have 64 distinct streams
+  (asserted in the test suite), but exotic off-grid values that agree to 4
+  decimals are rejected outright, and degenerate collisions on custom grids
+  are out of scope.
 - Sweep: p = 0.00…0.30 in steps of 0.01, plus a boundary check at p = 0.5;
   q ∈ {0, 0.02}. Adaptive budget: ≥100,000 shots per point, raised toward
   200 expected failures where failures are rare (max 1M - e.g. 671,141 shots

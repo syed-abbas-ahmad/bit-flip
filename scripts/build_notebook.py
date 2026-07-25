@@ -48,9 +48,20 @@ enumeration):
 At $p=0.1$: unencoded 10%, clean 2.8%, noisy ($q=0.02$) 3.37024%."""
     ),
     new_code_cell(
-        """import numpy as np
+        """import sys
+
+import numpy as np
 import pandas as pd
 from pathlib import Path
+
+import bitflip
+
+# Kernel-isolation probe: this notebook must run inside the project's own
+# virtual environment (see README reference workflow). On machines with
+# several Python/Jupyter installations, verify these two paths before
+# trusting the results.
+print(f"interpreter : {sys.executable}")
+print(f"bitflip from: {bitflip.__file__}")
 
 from bitflip.anchors import check_anchors
 from bitflip.enumeration import clean_logical_failure, event_table, exact_rates
@@ -179,36 +190,38 @@ frame[["p", "q", "shots", "logical_failure", "logical_failure_exact",
        "any_residual_x", "any_residual_x_exact"]].query("p in [0.0, 0.05, 0.1, 0.2, 0.3, 0.5]")"""
     ),
     new_markdown_cell(
-        """### Monte Carlo vs exact: global statistical criterion
+        """### Monte Carlo vs exact: release gate over all 64 rows
 
 We do **not** gate each point on its own 95% interval: 5% is the nominal
 *per-interval* miss probability, so across 31 independent intervals with
-exactly 95% coverage the chance of at least one miss is about 80%. Instead
-each of the 64 rows contributes a z-score $(\\hat{L} - L)/\\sigma$, with
-$\\sigma$ from the exact binomial rate floored at $10^{-15}$ so the two
-deterministic $p = 0$ rows (which cannot fail, and are checked explicitly
-below) contribute $z = 0$. We require $\\max|z| < 4$ and reduced
-$\\chi^2 = \\overline{z^2} < 2.5$, documented in the README and enforced in
-the test suite."""
+exactly 95% coverage the chance of at least one miss is about 80%. The
+release gate instead reads **every row of the CSV** (all 64, including the
+$p = 0.5$ boundary rows): each row contributes a z-score
+$(\\hat{L} - L)/\\sigma$, with $\\sigma$ from the exact binomial rate
+floored at $10^{-15}$ so the two deterministic $p = 0$ rows contribute
+$z = 0$ - and those rows are additionally *verified explicitly* below. The
+gate requires $\\max|z| < 4$ and reduced $\\chi^2 = \\overline{z^2} < 2.5$
+over the whole population. It is implemented in `bitflip.stats` so the
+notebook and the test suite share one definition; the test suite contains
+negative controls proving that mutating any row - a $p = 0.5$ boundary row
+or an in-sweep row - trips the gate."""
     ),
     new_code_cell(
-        """sweep = frame[frame.p <= 0.31].copy()
-sigma = np.sqrt(np.maximum(sweep["logical_failure_exact"] * (1 - sweep["logical_failure_exact"]), 1e-15) / sweep["shots"])
-z = (sweep["logical_failure"] - sweep["logical_failure_exact"]) / sigma
+        """from bitflip.stats import gate_report, population_report
 
-# Deterministic rows are verified explicitly, not silently dropped: at p = 0
-# zero failures are guaranteed, and they contribute z = 0 to the statistic.
-det = sweep[np.isclose(sweep.p, 0.0)]
-assert (det["logical_failure_count"] == 0).all(), "p=0 rows must have zero failures"
-print(f"rows selected: {len(sweep)} (62 sweep rows; the two p=0.5 boundary rows "
-      "are excluded from the figure sweep)")
-print(f"deterministic p=0 rows checked explicitly: {len(det)} (all contribute z = 0)")
-print(f"effective z values: {len(z)} (no row dropped)")
-print(f"max |z| = {z.abs().max():.2f}   reduced chi^2 = {(z**2).mean():.2f}")
-print("  (1.12 over all 64 CSV rows; excluding the two deterministic rows gives "
-      "1.15 - the subset choice is stated in the README)")
-assert z.abs().max() < 4.0 and (z**2).mean() < 2.5
-print("Global statistical criterion passed")"""
+report = gate_report(frame)
+print(f"population: {report['population']}: {report['n_rows']} rows "
+      f"({report['n_deterministic']} deterministic p=0 rows, checked explicitly: "
+      f"{'ok' if report['deterministic_ok'] else 'FAILED'})")
+print(f"max |z| = {report['max_abs_z']:.5f}   (limit {report['z_limit']})")
+print(f"reduced chi^2 = {report['chi2_red']:.8f}   (limit {report['chi2_limit']})")
+assert report["passed"], report
+
+populations = population_report(frame)
+print("subset chi^2 for transparency (same z definition):")
+for name, pop in populations.items():
+    print(f"  {name:32s} n = {pop['n']:2d}   chi^2 = {pop['chi2_red']:.8f}")
+print("Release gate passed over all 64 rows")"""
     ),
     new_code_cell(
         """make_figure(RESULTS / "sweep.csv", RESULTS / "fig_sweep.png")
@@ -227,13 +240,21 @@ records as the figure above). Both loop as GIFs in the same folder.
 
 If the decoder **ignores the reports** and goes straight to the ideal final
 majority, the logical failure rate is the clean law $L_0 = 2.8\\%$ for either
-$q$, because the reports are never used. **Perfect** active correction
-reaches the same terminal logical rate - its benefit is restoring the block
-to the code space (removing residual physical errors), which matters once
-more rounds or storage follow. **Acting on 2% noisy reports** raises the
-terminal logical rate to $3.37024\\%$, a penalty of 0.57024 percentage
-points over taking the final majority without feedback. The $q = 0$ curve
-in the figure above is simultaneously the no-feedback rate."""
+$q$, because the reports are never used. With **perfect** parity reports,
+correction returns every block to the code space. It corrects a single data
+flip. Two or three flips can leave an **undetected logical X** - a weight-2
+mask such as 110 produces the same reports as a single error on qubit 3, the
+decoder flips that qubit, and the block ends as 111 with zero syndrome but
+the wrong logical bit. At a 10% data-flip rate and a 2% error probability
+per parity report, **6.64912%** of corrected blocks contain at least one
+residual X, and **3.37024%** give the wrong final majority - a penalty of
+**0.57024 percentage points** over taking the final majority without
+feedback. Per qubit, the residual-X marginals are **4.656% / 3.39648% /
+4.656%** (the decoder breaks the symmetry), and in **3.27888%** of blocks a
+residual X remains while the ideal majority still gives the correct bit.
+These are different physical questions from the terminal logical rate, and
+all of them are verified against the oracle in the test suite. The $q = 0$
+curve in the figure above is simultaneously the no-feedback rate."""
     ),
     new_markdown_cell(
         """## 3. Zero-failure handling
