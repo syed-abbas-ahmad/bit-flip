@@ -1,5 +1,6 @@
 {
   "fps": 12,
+  "fps_note": "top-level fps is the render default; each entry records the fps it was actually encoded with",
   "size_px": [
     960,
     540
@@ -9,9 +10,15 @@
     {
       "mp4_frames": 312,
       "mp4_duration_s": 26.0,
+      "mp4_size_px": [
+        960,
+        540
+      ],
+      "mp4_fps": 12.0,
       "gif_frames": 20,
       "gif_duration_s": 25.79,
       "name": "anim_round - one-round walkthrough",
+      "fps": 12,
       "mp4": "results\\anim_round.mp4",
       "gif": "results\\anim_round.gif",
       "mp4_sha256": "49f536a79296207857850342a229cd10612aa2e112d7eaa713dacb7862c20c33",
@@ -29,9 +36,15 @@
     {
       "mp4_frames": 336,
       "mp4_duration_s": 28.0,
+      "mp4_size_px": [
+        960,
+        540
+      ],
+      "mp4_fps": 12.0,
       "gif_frames": 206,
       "gif_duration_s": 27.26,
       "name": "anim_sweep - p-sweep with Monte Carlo estimates",
+      "fps": 12,
       "mp4": "results\\anim_sweep.mp4",
       "gif": "results\\anim_sweep.gif",
       "mp4_sha256": "36796f29231eaaa1a1e2962465593bdbc6c6d7742625f1e66dc3b45bf1d0c1ec",

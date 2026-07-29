@@ -163,7 +163,7 @@ bitflip/            package (single implementation for CLI and notebook)
   plotting.py       comparison figure
   animate.py        both animations (MP4 + looping GIF + previews)
   cli.py            python -m bitflip {simulate,figure,table,animate,all}
-tests/              pytest suite (67 tests across 9 files)
+tests/              pytest suite (70 tests across 10 files)
 scripts/build_notebook.py   builds and executes the delivered notebook
 notebooks/bitflip_one_round.ipynb   executed notebook, runnable top to bottom
 results/            CSV, figure, animations, previews, verification record
@@ -181,14 +181,15 @@ py -3.14 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt -e ".[dev]"
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\python.exe -m bitflip all
-.\.venv\Scripts\python.exe -m jupyter nbconvert --to notebook --execute --inplace notebooks/bitflip_one_round.ipynb
+.\.venv\Scripts\python.exe -m nbconvert --to notebook --execute --inplace notebooks/bitflip_one_round.ipynb
 ```
 
 Note the `.\.venv\Scripts\python.exe -m ...` pattern throughout: a bare
 `jupyter` on PATH can dispatch to a different Python installation. The
-executed notebook prints `sys.executable` and `bitflip.__file__` in its
-first cell - on a machine with several Python installs, check that both
-point inside `.venv` before trusting the outputs.
+notebook's first cell runs a kernel-isolation check - when the rebuild
+helper sets expectation variables, a wrong interpreter or source tree
+raises before any result is produced - and always prints portable
+confirmations instead of absolute machine paths.
 
 Alternative quick start: `py -m pip install -e .` installs the runtime
 package with unpinned newest dependencies. The CSV reproduces identically on
@@ -212,7 +213,7 @@ Execute the notebook (identical seed and implementation; rewrites
 `results/sweep.csv` and `results/fig_sweep.png` byte-identically):
 
 ```powershell
-jupyter nbconvert --to notebook --execute --inplace notebooks/bitflip_one_round.ipynb
+.\.venv\Scripts\python.exe -m nbconvert --to notebook --execute --inplace notebooks/bitflip_one_round.ipynb
 ```
 
 Print the exact 32-event table at any (p, q):

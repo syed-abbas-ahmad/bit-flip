@@ -109,10 +109,14 @@ def _write_gif(frames: list[np.ndarray], gif_path: Path, fps: int):
 
 
 def _probe(mp4_path: Path, gif_path: Path, fps: int) -> dict:
-    """Verify frame counts and real durations; used for the audit record."""
+    """Verify frame counts, resolution and real durations against the actual
+    decoded files; used for the audit record and the verify command."""
     reader = iio_v2.get_reader(mp4_path)
     n_mp4 = reader.count_frames()
+    meta = reader.get_meta_data()
     reader.close()
+    mp4_size = list(meta["size"]) if "size" in meta else None
+    mp4_fps = round(float(meta["fps"]), 3) if meta.get("fps") else None
     with Image.open(gif_path) as gif:
         n_gif = gif.n_frames
         gif_ms = 0
@@ -122,6 +126,8 @@ def _probe(mp4_path: Path, gif_path: Path, fps: int) -> dict:
     return {
         "mp4_frames": int(n_mp4),
         "mp4_duration_s": round(n_mp4 / fps, 3),
+        "mp4_size_px": mp4_size,
+        "mp4_fps": mp4_fps,
         "gif_frames": int(n_gif),
         "gif_duration_s": round(gif_ms / 1000.0, 3),
     }
@@ -645,3 +651,79 @@ def budget_label(frame) -> str:
         return f"Fixed shot budget, {shots_min:,} shots per point"
     return (f"Adaptive shot budget, {shots_min:,}-{shots_max:,} shots "
             "per point (at least 100,000)")
+
+
+def verify_manifest(results_dir: Path) -> tuple[bool, dict]:
+    """Check ``results/animation_verification.json`` against the actual media.
+
+    For every animation entry this decodes the real MP4 (frame count,
+    resolution, fps) and GIF (frame count, total delay) and compares them
+    with the recorded values, then re-verifies the recorded SHA-256 hashes
+    of both files. Media paths are resolved against the working directory
+    or the manifest's own directory, so a copied tree is verifiable in
+    place. Returns ``(ok, report)``; any missing file, metadata mismatch or
+    hash mismatch marks the report and fails the caller.
+    """
+    manifest_path = Path(results_dir) / "animation_verification.json"
+    report: dict = {"manifest": str(manifest_path), "entries": {}, "ok": True}
+    if not manifest_path.exists():
+        report["error"] = f"manifest not found: {manifest_path}"
+        return False, report
+
+    def resolve(recorded: str) -> Path | None:
+        candidates = [
+            Path(recorded),
+            manifest_path.parent / Path(recorded).name,
+            manifest_path.parent.parent / recorded,
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return None
+
+    manifest = json.loads(manifest_path.read_text())
+    for entry in manifest.get("animations", []):
+        name = entry["name"]
+        entry_report: dict = {"ok": True}
+        mp4 = resolve(entry["mp4"])
+        gif = resolve(entry["gif"])
+        for label, path in (("mp4", mp4), ("gif", gif)):
+            if path is None:
+                entry_report["ok"] = False
+                entry_report[f"{label}_missing"] = entry[f"{label}"]
+
+        if entry_report["ok"]:
+            probe = _probe(mp4, gif, int(entry.get("fps", FPS_DEFAULT)))
+            # The declared fps field must agree with the actually encoded rate.
+            declared_fps = entry.get("fps")
+            if declared_fps is not None:
+                match = abs(float(declared_fps) - float(probe["mp4_fps"])) <= 0.01
+                entry_report["fps"] = {"recorded": declared_fps,
+                                       "actual": probe["mp4_fps"], "match": match}
+                if not match:
+                    entry_report["ok"] = False
+            for key in ("mp4_frames", "mp4_duration_s", "mp4_size_px",
+                        "mp4_fps", "gif_frames", "gif_duration_s"):
+                recorded = entry.get(key)
+                if recorded is None:
+                    continue
+                actual = probe[key]
+                if isinstance(recorded, list) and isinstance(actual, list):
+                    match = list(map(int, recorded)) == list(map(int, actual))
+                else:
+                    match = recorded == actual or float(recorded) == float(actual or 0)
+                entry_report[key] = {"recorded": recorded, "actual": actual,
+                                     "match": bool(match)}
+                if not match:
+                    entry_report["ok"] = False
+            for key, path in (("mp4_sha256", mp4), ("gif_sha256", gif)):
+                actual = _sha256(path)
+                match = actual == entry.get(key)
+                entry_report[key] = {"match": match}
+                if not match:
+                    entry_report["ok"] = False
+
+        if not entry_report["ok"]:
+            report["ok"] = False
+        report["entries"][name] = entry_report
+    return report["ok"], report

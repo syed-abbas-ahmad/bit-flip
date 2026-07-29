@@ -48,21 +48,25 @@ enumeration):
 At $p=0.1$: unencoded 10%, clean 2.8%, noisy ($q=0.02$) 3.37024%."""
     ),
     new_code_cell(
-        """import sys
-
-import numpy as np
+        """import numpy as np
 import pandas as pd
 from pathlib import Path
 
+from bitflip.kernel_check import (
+    ENV_EXPECT_PYTHON, ENV_EXPECT_SOURCE, assert_kernel_isolation, kernel_report
+)
+
+# Kernel-isolation check: this notebook must run inside the project's own
+# virtual environment (see README reference workflow). When the rebuild
+# helper sets the expectation variables, a mismatch raises AssertionError
+# and fails the run. Without them (a reader executing the notebook), only
+# portable confirmations are printed - absolute diagnostic paths, when the
+# rebuild writes them, go to the local audit evidence file.
+_portable = assert_kernel_isolation()
+for _name, _ok in _portable.items():
+    print(f"{_name}: {_ok}")
+
 import bitflip
-
-# Kernel-isolation probe: this notebook must run inside the project's own
-# virtual environment (see README reference workflow). On machines with
-# several Python/Jupyter installations, verify these two paths before
-# trusting the results.
-print(f"interpreter : {sys.executable}")
-print(f"bitflip from: {bitflip.__file__}")
-
 from bitflip.anchors import check_anchors
 from bitflip.enumeration import clean_logical_failure, event_table, exact_rates
 from bitflip.simulation import RATE_COLUMNS, run_sweep, sweep_frame, shots_for_point

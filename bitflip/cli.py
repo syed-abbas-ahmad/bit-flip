@@ -12,6 +12,7 @@ Commands
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -90,6 +91,16 @@ def cmd_animate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_verify(args: argparse.Namespace) -> int:
+    """Check the animation manifest against the actual decoded media."""
+    from .animate import verify_manifest
+
+    ok, report = verify_manifest(args.results_dir)
+    print(json.dumps(report, indent=2))
+    print("MANIFEST VERIFICATION:", "PASS" if ok else "FAIL")
+    return 0 if ok else 1
+
+
 def cmd_all(args: argparse.Namespace) -> int:
     """Run every step; the CSV output doubles as the figure/animate input.
 
@@ -134,6 +145,12 @@ def build_parser() -> argparse.ArgumentParser:
                       help="CSV of sweep records driving the sweep animation")
     anim.add_argument("--fps", type=int, default=12)
     anim.set_defaults(func=cmd_animate)
+
+    ver = sub.add_parser("verify",
+                         help="verify the animation manifest against the actual media")
+    ver.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR,
+                     dest="results_dir")
+    ver.set_defaults(func=cmd_verify)
 
     everything = sub.add_parser("all", help="simulate, figure and animate")
     everything.add_argument("--out", type=Path, default=DEFAULT_CSV)
