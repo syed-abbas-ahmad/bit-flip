@@ -1,5 +1,6 @@
 {
   "fps": 12,
+  "fps_note": "top-level fps is the render default; each entry records the fps it was actually encoded with",
   "size_px": [
     960,
     540
@@ -9,38 +10,42 @@
     {
       "mp4_frames": 312,
       "mp4_duration_s": 26.0,
-      "gif_frames": 20,
-      "gif_duration_s": 25.79,
+      "mp4_size_px": [
+        960,
+        540
+      ],
+      "mp4_fps": 12.0,
       "name": "anim_round - one-round walkthrough",
-      "mp4": "results\\anim_round.mp4",
-      "gif": "results\\anim_round.gif",
+      "fps": 12,
+      "mp4": "anim_round.mp4",
       "mp4_sha256": "49f536a79296207857850342a229cd10612aa2e112d7eaa713dacb7862c20c33",
-      "gif_sha256": "bb834bba1037d535b2c36bc4934447c028c02c9434121170e28546aa425945b2",
       "content": "three verified scenarios: clean correction (mask 010, reported 11), misleading report (mask 100, reported 11 -> residual 110, logical failure), false report (mask 000, reported 01 -> residual 001, logical survives)",
       "previews": [
-        "results\\preview_round_opening.png",
-        "results\\preview_round_clean_correction.png",
-        "results\\preview_round_misleading_report.png",
-        "results\\preview_round_misleading_outcome.png",
-        "results\\preview_round_false_report_outcome.png",
-        "results\\preview_round_final.png"
+        "preview_round_opening.png",
+        "preview_round_clean_correction.png",
+        "preview_round_misleading_report.png",
+        "preview_round_misleading_outcome.png",
+        "preview_round_false_report_outcome.png",
+        "preview_round_final.png"
       ]
     },
     {
       "mp4_frames": 336,
       "mp4_duration_s": 28.0,
-      "gif_frames": 206,
-      "gif_duration_s": 27.26,
+      "mp4_size_px": [
+        960,
+        540
+      ],
+      "mp4_fps": 12.0,
       "name": "anim_sweep - p-sweep with Monte Carlo estimates",
-      "mp4": "results\\anim_sweep.mp4",
-      "gif": "results\\anim_sweep.gif",
+      "fps": 12,
+      "mp4": "anim_sweep.mp4",
       "mp4_sha256": "36796f29231eaaa1a1e2962465593bdbc6c6d7742625f1e66dc3b45bf1d0c1ec",
-      "gif_sha256": "cbaa7dd2078d7c14e9022f71a749e6aa617d76eca1105e7340f09960c8c847b5",
       "content": "driven by results/sweep.csv (same records as the comparison figure); pause at p=0.1 with verified numbers; final frame includes the p=0.5 check",
       "previews": [
-        "results\\preview_sweep_opening.png",
-        "results\\preview_sweep_pause_p01.png",
-        "results\\preview_sweep_final.png"
+        "preview_sweep_opening.png",
+        "preview_sweep_pause_p01.png",
+        "preview_sweep_final.png"
       ]
     }
   ]

@@ -5,13 +5,14 @@ Commands
 ``simulate``  Run the seeded sweep and write the CSV of sampled and exact rates.
 ``figure``    Draw the comparison figure from the CSV.
 ``table``     Print the exact 32-event table at one (p, q).
-``animate``   Render both animations (MP4 primary, looping GIF secondary).
+``animate``   Render both MP4 animations and their PNG previews.
 ``all``       Run simulate, figure and animate in sequence.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -90,6 +91,16 @@ def cmd_animate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_verify(args: argparse.Namespace) -> int:
+    """Check the animation manifest against the actual decoded media."""
+    from .animate import verify_manifest
+
+    ok, report = verify_manifest(args.results_dir)
+    print(json.dumps(report, indent=2))
+    print("MANIFEST VERIFICATION:", "PASS" if ok else "FAIL")
+    return 0 if ok else 1
+
+
 def cmd_all(args: argparse.Namespace) -> int:
     """Run every step; the CSV output doubles as the figure/animate input.
 
@@ -128,12 +139,18 @@ def build_parser() -> argparse.ArgumentParser:
     tab.add_argument("--q", type=float, default=0.02)
     tab.set_defaults(func=cmd_table)
 
-    anim = sub.add_parser("animate", help="render both animations (MP4 + looping GIF)")
+    anim = sub.add_parser("animate", help="render both MP4 animations and their PNG previews")
     anim.add_argument("--outdir", type=Path, default=DEFAULT_RESULTS_DIR)
     anim.add_argument("--csv", type=Path, default=DEFAULT_CSV,
                       help="CSV of sweep records driving the sweep animation")
     anim.add_argument("--fps", type=int, default=12)
     anim.set_defaults(func=cmd_animate)
+
+    ver = sub.add_parser("verify",
+                         help="verify the animation manifest against the actual media")
+    ver.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR,
+                     dest="results_dir")
+    ver.set_defaults(func=cmd_verify)
 
     everything = sub.add_parser("all", help="simulate, figure and animate")
     everything.add_argument("--out", type=Path, default=DEFAULT_CSV)

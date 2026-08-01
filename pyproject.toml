@@ -1,10 +1,11 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "bitflip"
 version = "1.0.0"
+license = "MIT"
 description = "Three-qubit bit-flip code: classical-mask simulation of one correction round with noisy parity readout"
 requires-python = ">=3.11"
 dependencies = [

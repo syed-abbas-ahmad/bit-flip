@@ -121,11 +121,8 @@ def test_exit_status_wiring(tmp_path, rebuild_module):
 
 
 def test_main_pipeline_copies_sources_and_reports(tmp_path, monkeypatch, rebuild_module):
-    # Regression for the MYSELF re-audit: main() once skipped copy_sources()
-    # entirely, so pip failed on a missing requirements.txt. The wiring test
-    # mocks the slow steps (venv, pip, pytest, notebook) and lets the fake
-    # copy step populate a fresh destination with simulated pipeline outputs;
-    # the comparison must then pass.
+    # The rebuild must copy the sources before pip can read requirements.txt.
+    # Use stand-ins for the slow steps and check the resulting report.
     candidate = tmp_path / "candidate"
     rebuild = tmp_path / "rebuild"
     (candidate / "results").mkdir(parents=True)

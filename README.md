@@ -86,8 +86,8 @@ the code cannot help when errors are as likely as not. (My own derivation;
 the code and its setting follow the [IBM Quantum repetition code
 tutorial](https://quantum.cloud.ibm.com/docs/tutorials/repetition-codes).)
 
-**The noisy law** (derived by weighting the 32 events; verified against the
-oracle in the test suite and independently re-derived during review):
+**The noisy law.** Weighting the 32 events gives the following rates. The
+tests compare each formula with the enumeration.
 
 | Observable | Analytic law |
 |---|---|
@@ -161,10 +161,11 @@ bitflip/            package (single implementation for CLI and notebook)
   anchors.py        verified reference anchors, each bound to its own (p, q)
   scenarios.py      verified walkthrough scenarios (tested vs the oracle)
   plotting.py       comparison figure
-  animate.py        both animations (MP4 + looping GIF + previews)
-  cli.py            python -m bitflip {simulate,figure,table,animate,all}
-tests/              pytest suite (67 tests across 9 files)
+  animate.py        both MP4 animations and PNG previews
+  cli.py            python -m bitflip {simulate,figure,table,animate,verify,all}
+tests/              pytest suite
 scripts/build_notebook.py   builds and executes the delivered notebook
+scripts/clean_rebuild.py    rebuilds in a fresh directory and compares SHA-256 hashes
 notebooks/bitflip_one_round.ipynb   executed notebook, runnable top to bottom
 results/            CSV, figure, animations, previews, verification record
 ```
@@ -181,18 +182,21 @@ py -3.14 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt -e ".[dev]"
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\python.exe -m bitflip all
-.\.venv\Scripts\python.exe -m jupyter nbconvert --to notebook --execute --inplace notebooks/bitflip_one_round.ipynb
+.\.venv\Scripts\python.exe -m nbconvert --to notebook --execute --inplace notebooks/bitflip_one_round.ipynb
 ```
 
 Note the `.\.venv\Scripts\python.exe -m ...` pattern throughout: a bare
 `jupyter` on PATH can dispatch to a different Python installation. The
-executed notebook prints `sys.executable` and `bitflip.__file__` in its
-first cell - on a machine with several Python installs, check that both
-point inside `.venv` before trusting the outputs.
+notebook's first cell runs a kernel-isolation check - when the rebuild
+helper sets expectation variables, a wrong interpreter or source tree
+raises before any result is produced - and always prints portable
+confirmations instead of absolute machine paths.
+The checked-in notebook was executed in the pinned virtual environment
+with the interpreter and source checks enabled.
 
 Alternative quick start: `py -m pip install -e .` installs the runtime
 package with unpinned newest dependencies. The CSV reproduces identically on
-newer library versions, but media encodings (PNG/GIF/MP4 bytes) may differ
+newer library versions, but media encodings (PNG/MP4 bytes) may differ
 because encoder libraries change; install the pins above for byte-identical
 media.
 
@@ -212,7 +216,7 @@ Execute the notebook (identical seed and implementation; rewrites
 `results/sweep.csv` and `results/fig_sweep.png` byte-identically):
 
 ```powershell
-jupyter nbconvert --to notebook --execute --inplace notebooks/bitflip_one_round.ipynb
+.\.venv\Scripts\python.exe -m nbconvert --to notebook --execute --inplace notebooks/bitflip_one_round.ipynb
 ```
 
 Print the exact 32-event table at any (p, q):
@@ -223,9 +227,33 @@ py -m bitflip table --p 0.1 --q 0.02
 
 Individual steps: `py -m bitflip simulate` (writes `results/sweep.csv`),
 `py -m bitflip figure`, `py -m bitflip animate` (writes
-`results/anim_round.mp4/.gif` and `results/anim_sweep.mp4/.gif` plus static
+`results/anim_round.mp4` and `results/anim_sweep.mp4` plus static
 previews and `results/animation_verification.json` with probed durations and
 SHA-256 hashes).
+
+To verify a copy, keep the manifest and both MP4 files together
+and pass that folder to the verifier. For example, from the checkout:
+
+```powershell
+.\.venv\Scripts\python.exe -m bitflip verify --results-dir ..\copied-results
+```
+
+The command checks each recorded MP4 inside the selected folder.
+It exits 0 on a match and 1 for missing files, invalid records, or a
+disagreement with the measured media properties or SHA-256 digests.
+
+For a clean rebuild on Windows, run this command from the checkout. The
+destination must be a new or empty directory outside the checkout.
+
+```powershell
+py -3.14 scripts\clean_rebuild.py . ..\bitflip-rebuild
+```
+
+The script installs a fresh environment, regenerates the results, runs the
+tests and executes the notebook. It compares the SHA-256 hashes of the CSV,
+figure, animation manifest and both MP4s with the originals. It also checks
+that the notebook and CLI produce the same CSV. To repeat the comparison
+on the completed rebuild, append `--compare-only` to the command.
 
 ### Seeds, shots and uncertainty
 
@@ -263,18 +291,14 @@ fixed a priori, never chosen for attractive agreement.
 
 | File | Content | Duration |
 |---|---|---|
-| `results/anim_round.mp4` (+ looping `.gif`, previews) | One-round walkthrough in three verified scenarios: clean correction (mask 010, reported 11 → success); misleading report (mask 100, reported 11 → correction on q2, residual 110, **logical failure**); false report (mask 000, reported 01 → residual 001, logical survives, outside code space). Viewers get explicit prediction prompts before each outcome; ends on verified p = 0.1 numbers. | 26 s |
-| `results/anim_sweep.mp4` (+ looping `.gif`, previews) | The p-sweep: unencoded baseline, exact clean and noisy curves, Monte Carlo estimates with Wilson intervals appearing as p passes each estimate; pauses at p = 0.1 on verified numbers; ends on the p = 0.5 boundary check. Driven by the same `results/sweep.csv` records as the figure. | 28 s |
+| [anim_round.mp4](results/anim_round.mp4) | One-round walkthrough in three verified scenarios: clean correction (mask 010, reported 11 → success); misleading report (mask 100, reported 11 → correction on q2, residual 110, **logical failure**); false report (mask 000, reported 01 → residual 001, logical survives, outside code space). Viewers get explicit prediction prompts before each outcome; ends on verified p = 0.1 numbers. | 26 s |
+| [anim_sweep.mp4](results/anim_sweep.mp4) | The p-sweep: unencoded baseline, exact clean and noisy curves, Monte Carlo estimates with Wilson intervals appearing as p passes each estimate; pauses at p = 0.1 on verified numbers; ends on the p = 0.5 boundary check. Driven by the same `results/sweep.csv` records as the figure. | 28 s |
 
 Both are 960×540 at 12 fps, use the colorblind-safe Okabe-Ito palette with
 text labels alongside color, and are verified by `animation_verification.json`
-(frame counts and durations probed from the written files). MP4 needs the
-`imageio-ffmpeg` wheel (bundled ffmpeg); the GIFs loop forever for slides.
-Note: the GIF encoder merges pixel-identical consecutive frames while
-accumulating their display times, so GIF frame counts are lower than MP4
-frame counts by design; GIF delays are centisecond-quantised, so GIF total
-durations land within ~3% of the MP4 durations (both recorded in the
-verification file).
+(frame counts and durations probed from the written files). The
+`imageio-ffmpeg` wheel supplies the encoder. PNG previews of selected
+frames are in `results/`.
 
 ## Interview explanation
 
@@ -296,3 +320,7 @@ Delivered environment: Windows, Python 3.14.0, numpy 2.3.4,
 matplotlib 3.10.7, pandas 2.3.3, pillow 12.2.0, imageio 2.37.3,
 imageio-ffmpeg 0.8.1 (bundled ffmpeg for MP4), pytest 8.4.2,
 jupyter/nbclient/nbformat for the notebook. See `requirements.txt`.
+
+## License
+
+[MIT License](LICENSE). Copyright (c) 2026 Syed Abbas Ahmad.

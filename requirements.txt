@@ -1,5 +1,5 @@
 # Pinned delivered environment (exact versions reproduce all artifacts
-# byte-identically, including MP4/GIF encodings). Python 3.14.0, Windows.
+# byte-identically, including MP4 encodings). Python 3.14.0, Windows.
 numpy==2.3.4
 matplotlib==3.10.7
 pandas==2.3.3

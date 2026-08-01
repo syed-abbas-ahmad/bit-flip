@@ -1,4 +1,4 @@
-"""Two polished animations (MP4 primary, looping GIF secondary).
+"""Render the two MP4 animations and their PNG previews.
 
 Animation A (``anim_round.mp4``): a walkthrough of one correction round in
 three verified scenarios - a clean correction, a misleading report that
@@ -20,10 +20,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import textwrap
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
-import imageio
 import imageio.v2 as iio_v2
 import matplotlib
 
@@ -75,15 +75,8 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _save_frames(frames: list[np.ndarray], mp4_path: Path, gif_path: Path, fps: int):
-    """Write an MP4 (ffmpeg via imageio-ffmpeg) and a looping GIF.
-
-    The GIF is written with Pillow directly: imageio's GIF writer
-    deduplicates identical consecutive frames and drops per-frame delays,
-    which corrupts held frames (e.g. pauses for prediction). A global
-    256-colour palette (computed from a sample of frames, no dithering)
-    keeps text crisp and colors stable.
-    """
+def _save_frames(frames: list[np.ndarray], mp4_path: Path, fps: int):
+    """Encode the MP4 with FFmpeg via imageio-ffmpeg."""
     mp4_path.parent.mkdir(parents=True, exist_ok=True)
     with iio_v2.get_writer(
         mp4_path, fps=fps, codec="libx264", quality=8,
@@ -91,43 +84,36 @@ def _save_frames(frames: list[np.ndarray], mp4_path: Path, gif_path: Path, fps: 
     ) as writer:
         for frame in frames:
             writer.append_data(frame)
-    _write_gif(frames, gif_path, fps)
 
 
-def _write_gif(frames: list[np.ndarray], gif_path: Path, fps: int):
-    sample = frames[:: max(1, len(frames) // 8)]
-    pixels = np.concatenate([f.reshape(-1, 3) for f in sample])
-    palette = Image.fromarray(pixels.reshape(1, -1, 3)).quantize(colors=256)
-    pil_frames = [
-        Image.fromarray(frame).quantize(palette=palette, dither=Image.Dither.NONE)
-        for frame in frames
-    ]
-    pil_frames[0].save(
-        gif_path, save_all=True, append_images=pil_frames[1:],
-        duration=int(round(1000 / fps)), loop=0, disposal=2, optimize=False,
-    )
-
-
-def _probe(mp4_path: Path, gif_path: Path, fps: int) -> dict:
-    """Verify frame counts and real durations; used for the audit record."""
-    reader = iio_v2.get_reader(mp4_path)
-    n_mp4 = reader.count_frames()
-    reader.close()
-    with Image.open(gif_path) as gif:
-        n_gif = gif.n_frames
-        gif_ms = 0
-        for i in range(n_gif):
-            gif.seek(i)
-            gif_ms += int(gif.info.get("duration") or 0)
-    return {
+def _probe(mp4_path: Path, gif_path: Path | None = None) -> dict:
+    """Read MP4 metadata and, for older manifests, the GIF frame delays."""
+    with iio_v2.get_reader(mp4_path) as reader:
+        n_mp4 = reader.count_frames()
+        meta = reader.get_meta_data()
+    mp4_size = list(meta["size"]) if "size" in meta else None
+    container_fps = float(meta.get("fps") or 0)
+    fps_known = 0 < container_fps < math.inf
+    metadata = {
         "mp4_frames": int(n_mp4),
-        "mp4_duration_s": round(n_mp4 / fps, 3),
-        "gif_frames": int(n_gif),
-        "gif_duration_s": round(gif_ms / 1000.0, 3),
+        "mp4_duration_s": round(n_mp4 / container_fps, 3) if fps_known else None,
+        "mp4_size_px": mp4_size,
+        "mp4_fps": round(container_fps, 3) if fps_known else None,
     }
+    if gif_path is not None:
+        with Image.open(gif_path, formats=("GIF",)) as gif:
+            n_gif = gif.n_frames
+            gif_ms = 0
+            for i in range(n_gif):
+                gif.seek(i)
+                gif.load()
+                gif_ms += int(gif.info.get("duration") or 0)
+        metadata["gif_frames"] = n_gif
+        metadata["gif_duration_s"] = round(gif_ms / 1000.0, 3)
+    return metadata
 
 
-def _export_previews(mp4_path: Path, frames: list[np.ndarray], picks: dict[str, int],
+def _export_previews(frames: list[np.ndarray], picks: dict[str, int],
                      stem: str, outdir: Path, frame_indices=None):
     """Static previews (opening, transition, final) as PNG files.
 
@@ -407,25 +393,24 @@ def render_animation_a(outdir: Path, fps: int = FPS_DEFAULT,
     stem = "anim_round_partial" if partial else "anim_round"
     preview_stem = "round_partial" if partial else "round"
     mp4 = outdir / f"{stem}.mp4"
-    gif = outdir / f"{stem}.gif"
-    _save_frames(frames, mp4, gif, fps)
-    info = _probe(mp4, gif, fps)
+    _save_frames(frames, mp4, fps)
+    info = _probe(mp4)
     info.update({
         "name": f"{stem} - one-round walkthrough" + (" (partial render)" if partial else ""),
         "fps": fps,
-        "mp4": str(mp4), "gif": str(gif),
-        "mp4_sha256": _sha256(mp4), "gif_sha256": _sha256(gif),
+        "mp4": mp4.name,
+        "mp4_sha256": _sha256(mp4),
         "content": "three verified scenarios: clean correction (mask 010, reported 11), "
                    "misleading report (mask 100, reported 11 -> residual 110, logical failure), "
                    "false report (mask 000, reported 01 -> residual 001, logical survives)",
-        "previews": [str(p) for p in _export_previews(
-            mp4, frames,
+        "previews": [p.name for p in _export_previews(
+            frames,
             {"opening": 0, "clean_correction": 84, "misleading_report": 147,
              "misleading_outcome": 190, "false_report_outcome": 260, "final": 311},
-            preview_stem, outdir, frame_indices)],
+            preview_stem, outdir, indices if partial else None)],
     })
     _merge_record(outdir, info, fps=fps)
-    return [mp4, gif]
+    return [mp4]
 
 
 def _error_idx(state) -> int | None:
@@ -616,25 +601,24 @@ def render_animation_b(outdir: Path, fps: int = FPS_DEFAULT,
     stem = "anim_sweep_partial" if partial else "anim_sweep"
     preview_stem = "sweep_partial" if partial else "sweep"
     mp4 = outdir / f"{stem}.mp4"
-    gif = outdir / f"{stem}.gif"
-    _save_frames(frames, mp4, gif, fps)
-    info = _probe(mp4, gif, fps)
+    _save_frames(frames, mp4, fps)
+    info = _probe(mp4)
     info.update({
         "name": f"{stem} - p-sweep with Monte Carlo estimates"
                 + (" (partial render)" if partial else ""),
         "fps": fps,
-        "mp4": str(mp4), "gif": str(gif),
-        "mp4_sha256": _sha256(mp4), "gif_sha256": _sha256(gif),
+        "mp4": mp4.name,
+        "mp4_sha256": _sha256(mp4),
         "content": "driven by results/sweep.csv (same records as the comparison figure); "
                    "pause at p=0.1 with verified numbers; final frame includes the p=0.5 check",
-        "previews": [str(p) for p in _export_previews(
-            mp4, frames,
+        "previews": [p.name for p in _export_previews(
+            frames,
             {"opening": 0, "pause_p01": 110, "final": 335},
-            preview_stem, outdir, frame_indices)],
+            preview_stem, outdir, indices if partial else None)],
     })
     # merge with animation A's record if present
     _merge_record(outdir, info, fps=fps)
-    return [mp4, gif]
+    return [mp4]
 
 
 def budget_label(frame) -> str:
@@ -645,3 +629,116 @@ def budget_label(frame) -> str:
         return f"Fixed shot budget, {shots_min:,} shots per point"
     return (f"Adaptive shot budget, {shots_min:,}-{shots_max:,} shots "
             "per point (at least 100,000)")
+
+
+def _check_animation(entry: dict, directory: Path) -> dict:
+    """Check the MP4 and any GIF declared by an older manifest."""
+    report = {"ok": False}
+    has_gif = any(key == "gif" or key.startswith("gif_") for key in entry)
+    kinds = ("mp4", "gif") if has_gif else ("mp4",)
+    size = entry.get("mp4_size_px")
+    if not (isinstance(size, list) and len(size) == 2
+            and all(type(n) is int and n > 0 for n in size)):
+        raise ValueError("mp4_size_px must contain two positive integers")
+
+    paths = {}
+    measurements = ["mp4_size_px", "mp4_fps", "fps"]
+    for key in ("mp4_fps", "fps"):
+        value = entry.get(key)
+        if type(value) not in (int, float) or not 0 < value < math.inf:
+            raise ValueError(f"{key} must be a positive finite number")
+    for kind in kinds:
+        frame_key, duration_key = f"{kind}_frames", f"{kind}_duration_s"
+        count, duration = entry.get(frame_key), entry.get(duration_key)
+        if type(count) is not int or count <= 0:
+            raise ValueError(f"{frame_key} must be a positive integer")
+        if type(duration) not in (int, float) or not 0 < duration < math.inf:
+            raise ValueError(f"{duration_key} must be a positive finite number")
+        measurements.extend((frame_key, duration_key))
+        recorded = entry.get(kind)
+        if not isinstance(recorded, str) or not recorded.strip():
+            raise ValueError(f"{kind} must be a media filename")
+        # The renderer always writes siblings. Its older records include the
+        # original output directory (sometimes absolute, with either separator).
+        filename = PureWindowsPath(recorded).name
+        if not has_gif and filename != recorded:
+            raise ValueError(f"{kind} must be a sibling filename")
+        if PureWindowsPath(filename).suffix.lower() != f".{kind}":
+            raise ValueError(f"expected a .{kind} filename for {kind}")
+        if ":" in filename or "\x00" in filename:
+            raise ValueError(f"invalid {kind} filename")
+        path = directory / filename
+        if path.resolve().parent != directory:
+            raise ValueError(f"{kind} is outside the selected results directory")
+        digest = entry.get(f"{kind}_sha256")
+        if not isinstance(digest, str) or len(digest) != 64 or any(
+                c not in "0123456789abcdef" for c in digest):
+            raise ValueError(f"{kind}_sha256 must be a lowercase SHA-256 digest")
+        if path.is_file():
+            paths[kind] = path
+            report[f"{kind}_sha256"] = {"match": _sha256(path) == digest}
+        else:
+            report[f"{kind}_missing"] = str(path)
+
+    if len(paths) != len(kinds):
+        return report
+    try:
+        probe = _probe(paths["mp4"], paths.get("gif"))
+    except Exception as exc:
+        # ImageIO/FFmpeg and Pillow expose different exceptions for unreadable
+        # containers. Report the decoder's failure for this one entry.
+        report["error"] = f"could not decode media: {exc}"
+        return report
+
+    for key in measurements:
+        recorded = entry[key]
+        actual = probe.get("mp4_fps" if key == "fps" else key)
+        if key == "fps":
+            match = actual is not None and actual - 0.01 <= recorded <= actual + 0.01
+        else:
+            match = actual == recorded
+        report[key] = {"recorded": recorded, "actual": actual, "match": match}
+    report["ok"] = all(check["match"] for key, check in report.items() if key != "ok")
+    return report
+
+
+def verify_manifest(results_dir: Path) -> tuple[bool, dict]:
+    """Verify recorded hashes and media properties in the selected directory.
+
+    A renamed or relocated copy is self-contained. No media is looked up in
+    the working directory or in the output directory of the original render.
+    """
+    directory = Path(results_dir).resolve()
+    manifest_path = directory / "animation_verification.json"
+    report: dict = {"manifest": str(manifest_path), "entries": {}, "ok": False}
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError) as exc:
+        report["error"] = f"could not read manifest: {exc}"
+        return False, report
+
+    entries = manifest.get("animations") if isinstance(manifest, dict) else None
+    if not isinstance(entries, list) or not entries:
+        report["error"] = "manifest must contain a non-empty 'animations' list"
+        return False, report
+
+    outcomes = report["entries"]
+    for index, entry in enumerate(entries, start=1):
+        name = entry.get("name") if isinstance(entry, dict) else None
+        if not isinstance(name, str) or not name.strip() or name in outcomes:
+            # Index invalid entries separately so duplicate or missing names
+            # cannot overwrite a previous result.
+            report.setdefault("errors", []).append(f"entry {index}: expected a unique non-empty name")
+            continue
+        # Before per-entry container metadata was introduced, the renderer
+        # stored the common playback rate and size once at the top level.
+        if ("gif" in entry and "fps_note" not in manifest
+                and not {"fps", "mp4_fps", "mp4_size_px"}.intersection(entry)):
+            entry = dict(entry, fps=manifest.get("fps"), mp4_fps=manifest.get("fps"),
+                         mp4_size_px=manifest.get("size_px"))
+        try:
+            outcomes[name] = _check_animation(entry, directory)
+        except (OSError, ValueError, RuntimeError) as exc:
+            outcomes[name] = {"ok": False, "error": str(exc)}
+    report["ok"] = "errors" not in report and all(item["ok"] for item in outcomes.values())
+    return report["ok"], report
