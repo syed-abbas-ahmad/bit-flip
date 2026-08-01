@@ -163,7 +163,7 @@ bitflip/            package (single implementation for CLI and notebook)
   plotting.py       comparison figure
   animate.py        both animations (MP4 + looping GIF + previews)
   cli.py            python -m bitflip {simulate,figure,table,animate,all}
-tests/              pytest suite (70 tests across 10 files)
+tests/              pytest suite (75 tests across 10 files)
 scripts/build_notebook.py   builds and executes the delivered notebook
 notebooks/bitflip_one_round.ipynb   executed notebook, runnable top to bottom
 results/            CSV, figure, animations, previews, verification record

@@ -238,18 +238,16 @@ def main(argv: list[str] | None = None) -> int:
     print("2. simulate (generate the CSV the tests read)")
     run([str(py), "-m", "bitflip", "simulate"], rebuild)
 
-    print("3. tests")
+    print("3. figure + animations + manifest verification")
+    run([str(py), "-m", "bitflip", "figure"], rebuild)
+    run([str(py), "-m", "bitflip", "animate"], rebuild)
+    run([str(py), "-m", "bitflip", "verify", "--results-dir", "results"], rebuild)
+
+    print("4. tests (full suite against the generated results)")
     out = run([str(py), "-m", "pytest", "-q"], rebuild)
     lines = out.strip().splitlines()
     if lines:
         print(lines[-1])
-
-    print("4. figure + animations")
-    run([str(py), "-m", "bitflip", "figure"], rebuild)
-    run([str(py), "-m", "bitflip", "animate"], rebuild)
-    print("4b. manifest verification (metadata vs decoded media)")
-    run([str(py), "-m", "bitflip", "verify",
-         "--results-dir", "results"], rebuild)
 
     print("5. notebook execution (kernel assertions enabled)")
     notebook_env = {

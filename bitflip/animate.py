@@ -681,7 +681,15 @@ def verify_manifest(results_dir: Path) -> tuple[bool, dict]:
                 return candidate
         return None
 
-    manifest = json.loads(manifest_path.read_text())
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        report["error"] = f"manifest is not valid JSON: {exc}"
+        return False, report
+    if not isinstance(manifest, dict) or not isinstance(
+            manifest.get("animations"), list):
+        report["error"] = "manifest must be an object with an 'animations' list"
+        return False, report
     for entry in manifest.get("animations", []):
         name = entry["name"]
         entry_report: dict = {"ok": True}
