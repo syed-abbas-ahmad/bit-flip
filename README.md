@@ -82,9 +82,8 @@ L0 = C(3,2)·p²(1−p) + p³ = 3p² − 2p³
 ```
 
 At p = 0.1: **2.8%** encoded vs **10%** unencoded. At p = 0.5 both give 50%:
-the code cannot help when errors are as likely as not. (My own derivation;
-the code and its setting follow the [IBM Quantum repetition code
-tutorial](https://quantum.cloud.ibm.com/docs/tutorials/repetition-codes).)
+the code cannot help when errors are as likely as not. The model follows the
+[IBM Quantum repetition code tutorial](https://quantum.cloud.ibm.com/docs/tutorials/repetition-codes).
 
 **The noisy law.** Weighting the 32 events gives the following rates. The
 tests compare each formula with the enumeration.
@@ -299,20 +298,6 @@ text labels alongside color, and are verified by `animation_verification.json`
 (frame counts and durations probed from the written files). The
 `imageio-ffmpeg` wheel supplies the encoder. PNG previews of selected
 frames are in `results/`.
-
-## Interview explanation
-
-> "A three-qubit repetition code protects one logical bit against single
-> bit-flips. I derived that with perfect readout the failure probability
-> drops from p to 3p² − 2p³ - 10% to 2.8% at p = 0.1 - by enumerating the
-> eight error masks. Then I corrupted the two parity reports themselves: each
-> flips with probability q, and the decoder blindly trusts them. I weighted
-> all 32 error-and-readout events exactly and ran a seeded Monte Carlo sweep
-> with adaptive budgets up to 671,141 shots per point that matched the exact
-> rates to within statistical error. The interesting part is that a wrong
-> report can leave physical errors behind while the logical bit still reads
-> correctly - so I logged logical failure and residual damage as separate
-> observables and animated exactly that distinction."
 
 ## Requirements
 
